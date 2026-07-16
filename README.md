@@ -1,6 +1,9 @@
-# ATLAS
+# ATLAS: Automated Timing, Logic, Area and Statistics
 
-**Automated Timing, Logic, Area and Statistics**
+<p align="center">
+  <img src="images/ATLAS.png" alt="ATLAS Logo" width="300"/>
+</p>
+
 
 ATLAS is an open-source tool for automating the analysis and evaluation of digital hardware designs.
 
