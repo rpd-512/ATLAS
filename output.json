@@ -1,0 +1,59 @@
+{
+    "area": {
+        "combinational": 45.0432,
+        "sequential": 0.0,
+        "total": 45.0432,
+        "unit": "um^2"
+    },
+    "cells": {
+        "by_type": {
+            "sky130_fd_sc_hd__a211o_1": 1,
+            "sky130_fd_sc_hd__a21oi_1": 2,
+            "sky130_fd_sc_hd__clkinv_1": 1,
+            "sky130_fd_sc_hd__nand2b_1": 1,
+            "sky130_fd_sc_hd__nor2_1": 1,
+            "sky130_fd_sc_hd__nor3_1": 1,
+            "sky130_fd_sc_hd__or4_1": 1
+        },
+        "combinational": 8,
+        "sequential": 0,
+        "total": 8
+    },
+    "design": {
+        "liberty_file": "liberty/sky130_fd_sc_hd__tt_025C_1v80.lib",
+        "name": "LOD8",
+        "pvt_corner": "",
+        "source_file": "rtl/LOD8.sv",
+        "technology": "",
+        "yosys_version": "Yosys 0.67+42 (git sha1 6f7123d1d-dirty, Release, Clang /usr/bin/clang++ 18.1.8)"
+    },
+    "power": {
+        "internal_power": null,
+        "leakage_power": null,
+        "switching_power": null,
+        "total_power": null,
+        "unit": "W"
+    },
+    "runtime": {
+        "openroad": 3.4e-08,
+        "total": 0.1758391,
+        "unit": "s",
+        "yosys": 0.175839066
+    },
+    "structure": {
+        "num_memories": 0,
+        "num_memory_bits": 0,
+        "num_port_bits": 11,
+        "num_ports": 2,
+        "num_pub_wire_bits": 12,
+        "num_pub_wires": 3,
+        "num_submodules": 0,
+        "num_wire_bits": 17,
+        "num_wires": 8
+    },
+    "timing": {
+        "critical_path": null,
+        "unit": "ns",
+        "worst_slack": null
+    }
+}
