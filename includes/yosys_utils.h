@@ -37,7 +37,8 @@ inline void analyse_yosys_impl(const std::string& file_path,
                                 const std::string& top_module,
                                 const std::string& liberty_path,
                                 std::string& results,
-                                Metrics& metrics) {
+                                Metrics& metrics,
+                                std::string& netlist_path) {   // out-param again
     char out_tmpl[] = "/tmp/atlas_stat_XXXXXX.json";
     int out_fd = mkstemps(out_tmpl, 5);
     if (out_fd == -1) {
@@ -45,12 +46,21 @@ inline void analyse_yosys_impl(const std::string& file_path,
     }
     close(out_fd);
 
+    char netlist_tmpl[] = "/tmp/atlas_netlist_XXXXXX.v";
+    int netlist_fd = mkstemps(netlist_tmpl, 2);   // ".v" = 2 chars
+    if (netlist_fd == -1) {
+        throw std::runtime_error("Failed to create temp netlist file");
+    }
+    close(netlist_fd);
+    netlist_path = netlist_tmpl;
+
     std::string script =
         "read_verilog -sv " + file_path + "; "
         "synth -top " + top_module + " -noabc; "
         "dfflibmap -liberty " + liberty_path + "; "
         "abc -liberty " + liberty_path + "; "
         "opt_clean; "
+        "write_verilog -noattr " + netlist_path + "; "
         "stat -liberty " + liberty_path + " -json";
 
     std::string command =

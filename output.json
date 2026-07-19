@@ -28,17 +28,17 @@
         "yosys_version": "Yosys 0.67+42 (git sha1 6f7123d1d-dirty, Release, Clang /usr/bin/clang++ 18.1.8)"
     },
     "power": {
-        "internal_power": null,
-        "leakage_power": null,
-        "switching_power": null,
-        "total_power": null,
+        "internal_power": 5.9e-07,
+        "leakage_power": 1.53e-11,
+        "switching_power": 2.24e-07,
+        "total_power": 8.14e-07,
         "unit": "W"
     },
     "runtime": {
-        "openroad": 3.4e-08,
-        "total": 0.1758391,
+        "openroad": 0.293426491,
+        "total": 0.473380697,
         "unit": "s",
-        "yosys": 0.175839066
+        "yosys": 0.179954206
     },
     "structure": {
         "num_memories": 0,
@@ -52,8 +52,8 @@
         "num_wires": 8
     },
     "timing": {
-        "critical_path": null,
+        "critical_path": 0.84,
         "unit": "ns",
-        "worst_slack": null
+        "worst_slack": 9.16
     }
 }

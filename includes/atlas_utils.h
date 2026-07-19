@@ -63,26 +63,30 @@ private:
     std::string file_path;
     std::string top_module;
     std::string liberty_path;
+    std::string lef_path;   // NEW
+    std::string clk_port;
+    double clk_period_ns;
     std::string results;
+    std::string netlist_path;
     Metrics metrics;
 
 public:
-    Atlas(const std::string& file, const std::string& top, const std::string& liberty)
-        : file_path(file), top_module(top), liberty_path(liberty) {
-        if (!file_is_readable(file)) {
-            throw std::runtime_error("Failed to open: " + file);
-        }
-        if (!file_is_readable(liberty)) {
-            throw std::runtime_error("Failed to open liberty file: " + liberty);
-        }
+    Atlas(const std::string& file, const std::string& top, const std::string& liberty,
+          const std::string& lef = "/OpenROAD/test/sky130hd/sky130_fd_sc_hd_merged.lef",
+          const std::string& clk = "clk", double clk_period = 10.0)
+        : file_path(file), top_module(top), liberty_path(liberty), lef_path(lef),
+          clk_port(clk), clk_period_ns(clk_period) {
+        if (!file_is_readable(file)) throw std::runtime_error("Failed to open: " + file);
+        if (!file_is_readable(liberty)) throw std::runtime_error("Failed to open liberty file: " + liberty);
+        if (!file_is_readable(lef)) throw std::runtime_error("Failed to open LEF file: " + lef);
     }
 
     void analyse_yosys() {
-        analyse_yosys_impl(file_path, top_module, liberty_path, results, metrics);
+        analyse_yosys_impl(file_path, top_module, liberty_path, results, metrics, netlist_path);
     }
 
     void analyse_openroad() {
-        analyse_openroad_impl(metrics);
+        analyse_openroad_impl(metrics, netlist_path, liberty_path, lef_path, top_module, clk_port, clk_period_ns);
     }
 
     void evaluate() {
@@ -99,5 +103,6 @@ public:
         return metrics;
     }
 };
+
 
 #endif // ATLAS_UTILS_H
