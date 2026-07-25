@@ -6,62 +6,34 @@
 
 ATLAS is an open-source tool for automating the analysis and evaluation of digital hardware designs.
 
-The goal of ATLAS is to provide a simple workflow for processing HDL designs and extracting useful hardware metrics such as:
+The goal of ATLAS is to provide a **fast, self-contained** workflow for processing HDL designs and extracting useful hardware metrics such as:
 
-- **Timing** — delay and timing characteristics
+- **Timing** — delay and static timing analysis
 - **Logic** — synthesized logic and gate information
 - **Area** — estimated circuit area
+- **Power** — static and dynamic power estimation
 - **Statistics** — summarized design and synthesis statistics
 
-ATLAS aims to integrate existing open-source EDA tools into a simple and automated workflow, allowing hardware designers and researchers to quickly evaluate SystemVerilog and Verilog designs.
+Unlike most open-source EDA flows, ATLAS aims to do this **natively** — without shelling out to external synthesis or analysis tools — so that design evaluation loops stay fast and the whole pipeline stays within a single lightweight binary.
 
 ## Status
 
-🚧 ATLAS is currently under development.
+🚧 ATLAS is being rebuilt from the ground up as a self-contained engine. It previously relied on Yosys and OpenROAD for synthesis and analysis; that integration is being phased out in favor of an in-house implementation. Expect the interfaces, usage, and internals below to change frequently during this phase.
+
+## Goals
+
+- [ ] Native RTL parsing / elaboration for a practical subset of SystemVerilog and Verilog
+- [ ] In-house logic synthesis and technology mapping against standard-cell liberty files
+- [ ] Native static timing analysis (STA) via graph-based arrival/slack propagation
+- [ ] Static and dynamic power estimation from liberty data
+- [ ] Area and design statistics extraction
+- [ ] JSON report generation (via [nlohmann/json](https://github.com/nlohmann/json))
 
 ## Dependencies
 
-ATLAS relies on the following open-source EDA tools:
+None of the external EDA toolchain (Yosys, OpenROAD) is required going forward. The only third-party dependency is:
 
-- [Yosys](https://github.com/YosysHQ/yosys) — RTL synthesis
-- [OpenROAD](https://github.com/The-OpenROAD-Project/OpenROAD) — physical design, timing, and power analysis (integration in progress)
-
-It also uses [nlohmann/json](https://github.com/nlohmann/json) for parsing and generating JSON reports.
-
-### Yosys version requirement
-
-ATLAS requires a **recent build of yosys** (0.6x or newer). Many Linux distributions (e.g. Ubuntu) ship a much older packaged version — `apt install yosys` on Ubuntu 22.04 currently installs `0.9`, which is missing several passes and options ATLAS depends on (e.g. `synth -noabc`, newer `read_verilog` flags, and various liberty-parsing fixes).
-
-**Do not rely on your distro's package manager for this.** Install a current build via **OSS CAD Suite** instead — prebuilt nightly binaries maintained by YosysHQ that bundle Yosys, ABC, and related tools.
-
-#### Installing OSS CAD Suite
-
-```bash
-# Get the latest release download URL for your platform (linux-x64 shown here)
-curl -s https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest \
-  | grep "browser_download_url.*linux-x64" \
-  | cut -d '"' -f 4
-
-# Download and extract (replace with the URL printed above)
-curl -L -o oss-cad-suite.tgz "<paste URL here>"
-tar xzf oss-cad-suite.tgz
-
-# Activate it in your current shell
-source oss-cad-suite/environment
-
-# Confirm the upgrade
-yosys -V
-```
-
-This only affects your **current shell session**. To make it permanent, add the `source` line to your shell startup file:
-
-```bash
-echo 'source ~/oss-cad-suite/environment' >> ~/.zshrc   # or ~/.bashrc
-```
-
-Binaries are available for Linux (x64/arm/arm64/riscv64), macOS (Intel/M1/M2), and Windows x64 — grab the asset matching your platform from the [releases page](https://github.com/YosysHQ/oss-cad-suite-build/releases).
-
-> **Note:** `/dev/stdin`-based input and some hierarchy-resolution passes require an actual seekable file — ATLAS always reads your design from its real file path on disk rather than piping content through stdin, so this isn't something you need to worry about day-to-day; it's just why ATLAS's internals invoke yosys the way they do.
+- [nlohmann/json](https://github.com/nlohmann/json) — for parsing and generating JSON reports
 
 ## Building
 
@@ -87,26 +59,12 @@ make clean
 
 ## Usage
 
-```bash
-./atlas <design.sv> <top_module> <liberty_file.lib>
-```
+Usage is being redesigned alongside the native engine and will be documented here once the first native synthesis/STA/power pass is working end-to-end.
 
-Or via the Makefile's `run` target:
+## Contributing
 
-```bash
-make run ARGS="rtl/LOD8.sv LOD8 liberty/sky130_fd_sc_hd__tt_025C_1v80.lib"
-```
+ATLAS is early-stage and actively changing shape. Issues and PRs are welcome, but expect the core internals to be in flux.
 
-Example:
+## License
 
-```bash
-./atlas rtl/LOD8.sv LOD8 liberty/sky130_fd_sc_hd__tt_025C_1v80.lib
-```
-
-This will:
-
-1. Synthesize `<design.sv>` with Yosys, targeting `<top_module>` as the top-level module.
-2. Map the design to standard cells using `<liberty_file.lib>`.
-3. Extract area, cell count, and structural statistics.
-4. (Timing and power analysis via OpenROAD are in progress.)
-5. Write a JSON report to `output.json`.
+MIT
