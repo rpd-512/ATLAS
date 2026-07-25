@@ -1,0 +1,5 @@
+# script.ys
+read_verilog -sv rtl/LOD8.sv
+hierarchy -top LOD8
+proc; opt; techmap; opt   # or synth -run coarse: if you want RTL-level cells, not gate-level
+write_json netlist.json

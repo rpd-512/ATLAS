@@ -1,5 +1,6 @@
+/*
 module LOD8(
-    /* verilator lint_off UNUSED */
+    /* verilator lint_off UNUSED *//*
     input  logic [7:0] in,
     output logic [2:0] out
 );
@@ -21,4 +22,13 @@ module LOD8(
     assign out[1] = n23 & U;             // 1× AND2
     assign out[0] = U ? n9 : in[1];      // 1× MUX2
 
+endmodule
+//*/
+module LOD8 (
+    input  logic a,
+    input  logic b,
+    input  logic c,
+    output logic y
+);
+    assign y = (a & b) | c;
 endmodule
