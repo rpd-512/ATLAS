@@ -1,5 +1,8 @@
-# script.ys
 read_verilog -sv rtl/LOD8.sv
 hierarchy -top LOD8
-proc; opt; techmap; opt   # or synth -run coarse: if you want RTL-level cells, not gate-level
+proc; opt
+techmap
+dfflibmap -liberty liberty/sky130_fd_sc_hd__tt_025C_1v80.lib      # maps flip-flops to lib cells, if any
+abc -liberty liberty/sky130_fd_sc_hd__tt_025C_1v80.lib            # maps combinational gates to lib cells
+opt_clean
 write_json netlist.json
