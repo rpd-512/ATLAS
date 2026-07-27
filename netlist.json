@@ -4,100 +4,199 @@
     "LOD8": {
       "attributes": {
         "top": 1,
-        "src": "rtl/LOD8.sv:27"
+        "src": "rtl/LOD8.sv:2"
       },
       "ports": {
-        "a": {
+        "in": {
           "direction": "input",
-          "bits": [ 2 ]
+          "bits": [ 2, 3, 4, 5, 6, 7, 8, 9 ]
         },
-        "b": {
-          "direction": "input",
-          "bits": [ 3 ]
-        },
-        "c": {
-          "direction": "input",
-          "bits": [ 4 ]
-        },
-        "y": {
+        "out": {
           "direction": "output",
-          "bits": [ 5 ]
+          "bits": [ 10, 11, 12 ]
         }
       },
       "cells": {
-        "$auto$simplemap.cc:85:simplemap_bitop$47": {
+        "$abc$83$auto$blifparse.cc:371:parse_blif$84": {
           "hide_name": 1,
-          "type": "$_AND_",
+          "type": "sky130_fd_sc_hd__clkinv_1",
           "parameters": {
           },
           "attributes": {
-            "src": "rtl/LOD8.sv:33"
-          },
-          "port_directions": {
-            "A": "input",
-            "B": "input",
-            "Y": "output"
           },
           "connections": {
-            "A": [ 2 ],
-            "B": [ 3 ],
-            "Y": [ 6 ]
+            "A": [ 7 ],
+            "Y": [ 13 ]
           }
         },
-        "$auto$simplemap.cc:85:simplemap_bitop$48": {
+        "$abc$83$auto$blifparse.cc:371:parse_blif$85": {
           "hide_name": 1,
-          "type": "$_OR_",
+          "type": "sky130_fd_sc_hd__nor2_1",
           "parameters": {
           },
           "attributes": {
-            "src": "rtl/LOD8.sv:33"
-          },
-          "port_directions": {
-            "A": "input",
-            "B": "input",
-            "Y": "output"
           },
           "connections": {
             "A": [ 6 ],
+            "B": [ 7 ],
+            "Y": [ 14 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$86": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__or4_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 6 ],
+            "B": [ 7 ],
+            "C": [ 8 ],
+            "D": [ 9 ],
+            "X": [ 12 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$87": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__nor3_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 8 ],
+            "B": [ 9 ],
+            "C": [ 14 ],
+            "Y": [ 15 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$88": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__nor3_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 5 ],
             "B": [ 4 ],
-            "Y": [ 5 ]
+            "C": [ 12 ],
+            "Y": [ 16 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$89": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__nor2_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 15 ],
+            "B": [ 16 ],
+            "Y": [ 11 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$90": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__nand2b_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A_N": [ 6 ],
+            "B": [ 5 ],
+            "Y": [ 17 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$91": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__a21oi_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A1": [ 13 ],
+            "A2": [ 17 ],
+            "B1": [ 8 ],
+            "Y": [ 18 ]
+          }
+        },
+        "$abc$83$auto$blifparse.cc:371:parse_blif$92": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__a211o_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A1": [ 3 ],
+            "A2": [ 16 ],
+            "B1": [ 18 ],
+            "C1": [ 9 ],
+            "X": [ 10 ]
           }
         }
       },
       "netnames": {
-        "$and$rtl/LOD8.sv:33$1_Y": {
+        "$abc$83$new_n11_": {
           "hide_name": 1,
-          "bits": [ 6 ],
+          "bits": [ 13 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:33"
           }
         },
-        "a": {
-          "hide_name": 0,
-          "bits": [ 2 ],
+        "$abc$83$new_n12_": {
+          "hide_name": 1,
+          "bits": [ 14 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:28"
           }
         },
-        "b": {
-          "hide_name": 0,
-          "bits": [ 3 ],
+        "$abc$83$new_n14_": {
+          "hide_name": 1,
+          "bits": [ 15 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:29"
           }
         },
-        "c": {
-          "hide_name": 0,
-          "bits": [ 4 ],
+        "$abc$83$new_n15_": {
+          "hide_name": 1,
+          "bits": [ 16 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:30"
           }
         },
-        "y": {
-          "hide_name": 0,
-          "bits": [ 5 ],
+        "$abc$83$new_n17_": {
+          "hide_name": 1,
+          "bits": [ 17 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:31"
+          }
+        },
+        "$abc$83$new_n18_": {
+          "hide_name": 1,
+          "bits": [ 18 ],
+          "attributes": {
+          }
+        },
+        "in": {
+          "hide_name": 0,
+          "bits": [ 2, 3, 4, 5, 6, 7, 8, 9 ],
+          "attributes": {
+            "src": "rtl/LOD8.sv:4"
+          }
+        },
+        "n6": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "src": "rtl/LOD8.sv:8"
+          }
+        },
+        "out": {
+          "hide_name": 0,
+          "bits": [ 10, 11, 12 ],
+          "attributes": {
+            "src": "rtl/LOD8.sv:5"
           }
         }
       }
