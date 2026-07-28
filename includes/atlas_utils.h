@@ -91,32 +91,116 @@ void initialize_gate_library(std::unordered_map<std::string, GateData>& gate_lib
     add_gate(gate_lib, "MAJ3", "sky130_fd_sc_hd__maj3_1", 3, 1);
 }
 
-class GateNode{
+class GateNode : public std::enable_shared_from_this<GateNode> {
 public:
-    std::vector<wire_id> inputs;
-    std::vector<wire_id> outputs;
-    std::vector<bool> result_value;
+    using NodePtr     = std::shared_ptr<GateNode>;
+    using WeakNodePtr = std::weak_ptr<GateNode>;
 
-    bool evaluated = false;
+    std::vector<wire_id> inputs;    // wire IDs feeding this gate (for netlist bookkeeping)
+    std::vector<wire_id> outputs;   // wire IDs this gate drives
 
     std::string type;
     GateData data;
-    
+
+    // --- connectivity (populated after construction, see connect_input) ---
+    std::vector<NodePtr> input_nodes;        // upstream gates (owned)
+    std::vector<size_t>  input_pin;          // which output pin of input_nodes[i] feeds us
+    std::vector<WeakNodePtr> output_nodes;   // downstream gates (non-owning)
+
+    // --- primary-input support ---
+    bool is_primary_input = false;
+    bool primary_value = false;
+
+    // --- evaluation state ---
+    std::vector<bool> result_value;
+    bool evaluated  = false;
+    bool evaluating = false;   // cycle-detection guard
+
     GateNode(
-        const std::vector<wire_id>& inputs,
-        const std::vector<wire_id>& outputs,
-        const std::string& type
-    ) : inputs(inputs), outputs(outputs), type(type) {
-        data = gate_lib[type];
-    };
-    std::vector<wire_id> evaluate();
+        const std::vector<wire_id>& inputs_,
+        const std::vector<wire_id>& outputs_,
+        const std::string& type_
+    ) : inputs(inputs_), outputs(outputs_), type(type_) {
+        if (type == "INPUT") {
+            is_primary_input = true;
+            data = GateData{"INPUT", 0.0f, "INPUT", 0, 1};
+            return;
+        }
+        auto it = gate_lib.find(type);
+        if (it == gate_lib.end())
+            throw std::invalid_argument("GateNode: unknown gate type '" + type + "'");
+        data = it->second;
+
+        if (inputs.size() != static_cast<size_t>(data.num_inputs))
+            throw std::invalid_argument(
+                "GateNode: '" + type + "' expects " + std::to_string(data.num_inputs) +
+                " inputs, got " + std::to_string(inputs.size()));
+        if (outputs.size() != static_cast<size_t>(data.num_outputs))
+            throw std::invalid_argument(
+                "GateNode: '" + type + "' expects " + std::to_string(data.num_outputs) +
+                " outputs, got " + std::to_string(outputs.size()));
+    }
+
+    // Wire up one input pin (index `pin_index` in `inputs`) to a driver gate's
+    // output pin `driver_pin`. Call once per input pin, in pin order.
+    void connect_input(const NodePtr& driver, size_t driver_pin) {
+        if (driver_pin >= driver->data.num_outputs)
+            throw std::invalid_argument("connect_input: driver_pin out of range for '" + driver->type + "'");
+        input_nodes.push_back(driver);
+        input_pin.push_back(driver_pin);
+        driver->output_nodes.push_back(weak_from_this());
+    }
+
+    // For primary inputs: set the value this node feeds forward.
+    void set_primary_value(bool v) {
+        if (!is_primary_input)
+            throw std::logic_error("set_primary_value called on non-input gate '" + type + "'");
+        primary_value = v;
+    }
+
+    // Clears memoized results so the same DAG can be re-evaluated with new
+    // primary input values (needed every CGP fitness-eval call).
+    void reset() {
+        evaluated = false;
+        evaluating = false;
+        result_value.clear();
+    }
+
+    std::vector<bool> evaluate() {
+        if (evaluated) return result_value;
+
+        if (is_primary_input) {
+            result_value = {primary_value};
+            evaluated = true;
+            return result_value;
+        }
+
+        if (evaluating)
+            throw std::runtime_error("GateNode::evaluate: cycle detected at gate of type '" + type + "'");
+        evaluating = true;
+
+        std::vector<bool> input_values;
+        input_values.reserve(input_nodes.size());
+        for (size_t i = 0; i < input_nodes.size(); ++i) {
+            const std::vector<bool>& upstream = input_nodes[i]->evaluate();
+            size_t pin = input_pin[i];
+            if (pin >= upstream.size())
+                throw std::runtime_error("GateNode::evaluate: pin index out of range from '" + input_nodes[i]->type + "'");
+            input_values.push_back(upstream[pin]);
+        }
+
+        result_value = data.evaluate(input_values);
+        evaluating = false;
+        evaluated = true;
+        return result_value;
+    }
 };
 
-
-struct NetStruct{
-    std::vector<GateNode> nodes;
-    std::vector<GateNode> input_nodes;
-    std::vector<GateNode> output_nodes;
+class NetStruct {
+public:
+    std::vector<GateNode::NodePtr> nodes;
+    std::vector<GateNode::NodePtr> input_nodes;
+    std::vector<GateNode::NodePtr> output_nodes;
 };
 
 #endif // ATLAS_UTILS_H
