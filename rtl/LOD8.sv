@@ -27,17 +27,12 @@ endmodule
 /*
 // comb2.sv
 module LOD8 (
-    input  logic a,
-    input  logic b,
-    input  logic c,
-    input  logic d,
-    output logic y
+    input  logic[7:0] a,
+    input  logic[7:0] b,
+    output logic[7:0] y
 );
-    logic w1, w2;
-
-    assign w1 = a & b;
-    assign w2 = c | d;
-    assign y  = w1 ^ w2;
+    assign y  = a+b;
 
 endmodule
+
 */

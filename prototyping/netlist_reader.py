@@ -78,13 +78,14 @@ def parse_netlist(netlist_path: str):
                 print(direction, pin, conn_bits)
                 if direction is None:
                     direction = "output" if pin.upper() in OUTPUT_PIN_NAMES else "input"
-
                 for b in conn_bits:
                     if direction == "output":
+                        print("output", b)
                         out_nets.append(b)
                         if not is_const(b):
                             all_bits.add(b)
-                    else:
+                    elif direction == "input":
+                        print("input", b)
                         in_nets.append(b)
                         if not is_const(b):
                             all_bits.add(b)
@@ -252,14 +253,13 @@ if __name__ == "__main__":
         print("Usage: python3 netlist_reader.py <netlist_file>")
         exit(1)
 
-    input_values = [0, 0, 1, 1, 1, 1, 0, 0, 
-                    1, 0, 1, 0, 1, 0, 1, 0]
+    input_values = [0, 0, 1, 1, 1, 1, 0, 0]
     for name, (bits, gates) in parse_netlist(argv[1]).items():
         print(f"\nModule: {name}")
         print("Bits:", bits)
         print("Gates:", gates)
 
-        result = evaluate_circuit(bits, gates, num_inputs=16, num_outputs=8,
+        result = evaluate_circuit(bits, gates, num_inputs=8, num_outputs=3,
                                    input_values=input_values[::-1])
         print("Input values:", "".join(str(int(x)) for x in input_values[::-1]))
         print("Output values:", "".join(str(int(x)) for x in result[::-1]))
