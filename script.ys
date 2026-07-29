@@ -6,4 +6,5 @@ dfflibmap -liberty liberty/sky130_fd_sc_hd__tt_025C_1v80.lib      # maps flip-fl
 abc -liberty liberty/sky130_fd_sc_hd__tt_025C_1v80.lib            # maps combinational gates to lib cells
 opt_clean
 #read_liberty -lib -ignore_miss_dir liberty/sky130_fd_sc_hd__tt_025C_1v80.lib
+stat -liberty liberty/sky130_fd_sc_hd__tt_025C_1v80.lib
 write_json netlist.json

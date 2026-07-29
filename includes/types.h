@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <regex>
 #include <nlohmann/json.hpp>
 
 using wire_id = uint32_t;
@@ -163,8 +164,6 @@ inline std::array<bool, 2> evaluate_gate(GateType type, const std::array<bool, M
         }
         case GateType::MAJ3: return {(a[0] && a[1]) || (a[1] && a[2]) || (a[0] && a[2]), false};
 
-        // Power-gating isolation buffer: passthrough of A. SLEEP is a
-        // control pin, not part of the boolean logic, and is ignored here.
         case GateType::LPFLOW_ISOBUFSRC: return {a[0], false};
 
         default:
@@ -188,8 +187,8 @@ struct GateData {
         int n = GetGateInfo(gate_type).outputs;
         return std::vector<bool>(out.begin(), out.begin() + n);
     }
+    float area = -1;              // area in um^2, for area-based fitness
 };
-
 struct Gate {
     std::string id;                 // cell instance name from the netlist
     std::vector<wire_id> outputs;   // this gate's output wires, in pin order
@@ -202,5 +201,76 @@ struct Circuit {
     std::vector<wire_id> inputs;    // primary input wires, in port-bit order
     std::vector<wire_id> outputs;   // primary output wires, in port-bit order
 };
+
+
+struct LibertyCellData {
+    std::string name;      // raw liberty cell name, unstripped
+    double area = 0.0;
+};
+
+using LibertyLibrary = std::unordered_map<std::string, LibertyCellData>;
+
+inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
+    std::ifstream f(liberty_path);
+    if (!f) {
+        throw std::runtime_error("Could not open liberty file: " + liberty_path);
+    }
+    std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    // cell ( "name" ) {   or   cell ( name ) {
+    static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
+    static const std::regex area_pattern(
+        R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+
+    LibertyLibrary cells;
+
+    auto begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
+    auto end   = std::sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+        const std::smatch& match = *it;
+        std::string cell_name = match[1].str();
+
+        // Find the matching closing brace for this cell block, same
+        // depth-counting approach as the Python version.
+        size_t start = static_cast<size_t>(match.position(0) + match.length(0));
+        int depth = 1;
+        size_t i = start;
+        while (i < data.size() && depth > 0) {
+            if (data[i] == '{') ++depth;
+            else if (data[i] == '}') --depth;
+            ++i;
+        }
+        std::string cell_block = data.substr(start, i - start - 1);
+
+        std::smatch area_match;
+        if (std::regex_search(cell_block, area_match, area_pattern)) {
+            LibertyCellData entry;
+            entry.name = cell_name;
+            entry.area = std::stod(area_match[1].str());
+            cells[cell_name] = std::move(entry);
+        }
+    }
+
+    return cells;
+}
+
+// Populates GateData::area on every gate in circuit by looking up
+// gate.data.name (the raw, unstripped cell type) in the liberty library.
+// Gates with no matching liberty entry are left at their default (-1.0);
+// warn_missing controls whether that's reported to stderr.
+inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
+                                 bool warn_missing = true) {
+    for (Gate& g : circuit.gates) {
+        auto it = liberty.find(g.data.name);
+        if (it != liberty.end()) {
+            g.data.area = it->second.area;
+        } else if (warn_missing) {
+            std::cerr << "attach_liberty_data: no liberty entry for cell type '"
+                       << g.data.name << "' (gate '" << g.id << "')\n";
+        }
+    }
+}
+
 
 #endif // TYPES_H
