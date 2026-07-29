@@ -1,10 +1,10 @@
 {
-  "creator": "Yosys 0.67+42 (git sha1 6f7123d1d-dirty, Release, Clang /usr/bin/clang++ 18.1.8)",
+  "creator": "Yosys 0.9 (git sha1 1979e0b)",
   "modules": {
     "LOD8": {
       "attributes": {
-        "top": "00000000000000000000000000000001",
-        "src": "rtl/LOD8.sv:2.1-25.10"
+        "top": 1,
+        "src": "rtl/LOD8.sv:1"
       },
       "ports": {
         "in": {
@@ -17,7 +17,7 @@
         }
       },
       "cells": {
-        "$abc$110$auto$blifparse.cc:397:parse_blif$111": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$227": {
           "hide_name": 1,
           "type": "sky130_fd_sc_hd__clkinv_1",
           "parameters": {
@@ -25,11 +25,11 @@
           "attributes": {
           },
           "connections": {
-            "A": [ 7 ],
+            "A": [ 6 ],
             "Y": [ 13 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$112": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$228": {
           "hide_name": 1,
           "type": "sky130_fd_sc_hd__nor2_1",
           "parameters": {
@@ -42,120 +42,139 @@
             "Y": [ 14 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$113": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$229": {
           "hide_name": 1,
-          "type": "sky130_fd_sc_hd__or4_1",
+          "type": "sky130_fd_sc_hd__nor2_1",
           "parameters": {
           },
           "attributes": {
           },
           "connections": {
-            "A": [ 9 ],
-            "B": [ 8 ],
-            "C": [ 7 ],
-            "D": [ 6 ],
-            "X": [ 12 ]
-          }
-        },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$114": {
-          "hide_name": 1,
-          "type": "sky130_fd_sc_hd__nor3_1",
-          "parameters": {
-          },
-          "attributes": {
-          },
-          "connections": {
-            "A": [ 4 ],
-            "B": [ 5 ],
-            "C": [ 12 ],
+            "A": [ 7 ],
+            "B": [ 6 ],
             "Y": [ 15 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$115": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$230": {
           "hide_name": 1,
-          "type": "sky130_fd_sc_hd__nand2b_1",
+          "type": "sky130_fd_sc_hd__nor2_1",
           "parameters": {
           },
           "attributes": {
           },
           "connections": {
-            "A_N": [ 6 ],
-            "B": [ 5 ],
+            "A": [ 5 ],
+            "B": [ 4 ],
             "Y": [ 16 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$116": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$231": {
           "hide_name": 1,
-          "type": "sky130_fd_sc_hd__a21oi_1",
+          "type": "sky130_fd_sc_hd__nand2_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 14 ],
+            "B": [ 15 ],
+            "Y": [ 12 ]
+          }
+        },
+        "$abc$226$auto$blifparse.cc:371:parse_blif$232": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__o31ai_1",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A1": [ 7 ],
+            "A2": [ 6 ],
+            "A3": [ 16 ],
+            "B1": [ 14 ],
+            "Y": [ 11 ]
+          }
+        },
+        "$abc$226$auto$blifparse.cc:371:parse_blif$233": {
+          "hide_name": 1,
+          "type": "sky130_fd_sc_hd__a31oi_1",
           "parameters": {
           },
           "attributes": {
           },
           "connections": {
             "A1": [ 13 ],
-            "A2": [ 16 ],
-            "B1": [ 8 ],
+            "A2": [ 3 ],
+            "A3": [ 16 ],
+            "B1": [ 7 ],
             "Y": [ 17 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$117": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$234": {
           "hide_name": 1,
-          "type": "sky130_fd_sc_hd__a211o_1",
+          "type": "sky130_fd_sc_hd__a31oi_1",
           "parameters": {
           },
           "attributes": {
           },
           "connections": {
-            "A1": [ 3 ],
-            "A2": [ 15 ],
-            "B1": [ 17 ],
-            "C1": [ 9 ],
-            "X": [ 10 ]
+            "A1": [ 5 ],
+            "A2": [ 14 ],
+            "A3": [ 15 ],
+            "B1": [ 9 ],
+            "Y": [ 18 ]
           }
         },
-        "$abc$110$auto$blifparse.cc:397:parse_blif$118": {
+        "$abc$226$auto$blifparse.cc:371:parse_blif$235": {
           "hide_name": 1,
-          "type": "sky130_fd_sc_hd__a21oi_1",
+          "type": "sky130_fd_sc_hd__o21ai_0",
           "parameters": {
           },
           "attributes": {
           },
           "connections": {
-            "A1": [ 14 ],
-            "A2": [ 12 ],
-            "B1": [ 15 ],
-            "Y": [ 11 ]
+            "A1": [ 8 ],
+            "A2": [ 17 ],
+            "B1": [ 18 ],
+            "Y": [ 10 ]
           }
         }
       },
       "netnames": {
-        "$abc$110$new_n11": {
+        "$abc$226$new_n11_": {
           "hide_name": 1,
           "bits": [ 13 ],
           "attributes": {
           }
         },
-        "$abc$110$new_n12": {
+        "$abc$226$new_n12_": {
           "hide_name": 1,
           "bits": [ 14 ],
           "attributes": {
           }
         },
-        "$abc$110$new_n14": {
+        "$abc$226$new_n13_": {
           "hide_name": 1,
           "bits": [ 15 ],
           "attributes": {
           }
         },
-        "$abc$110$new_n15": {
+        "$abc$226$new_n14_": {
           "hide_name": 1,
           "bits": [ 16 ],
           "attributes": {
           }
         },
-        "$abc$110$new_n16": {
+        "$abc$226$new_n17_": {
           "hide_name": 1,
           "bits": [ 17 ],
+          "attributes": {
+          }
+        },
+        "$abc$226$new_n18_": {
+          "hide_name": 1,
+          "bits": [ 18 ],
           "attributes": {
           }
         },
@@ -163,21 +182,14 @@
           "hide_name": 0,
           "bits": [ 2, 3, 4, 5, 6, 7, 8, 9 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:4.24-4.26"
-          }
-        },
-        "n6": {
-          "hide_name": 0,
-          "bits": [ 12 ],
-          "attributes": {
-            "src": "rtl/LOD8.sv:8.27-8.29"
+            "src": "rtl/LOD8.sv:2"
           }
         },
         "out": {
           "hide_name": 0,
           "bits": [ 10, 11, 12 ],
           "attributes": {
-            "src": "rtl/LOD8.sv:5.24-5.27"
+            "src": "rtl/LOD8.sv:3"
           }
         }
       }

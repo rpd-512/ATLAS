@@ -1,4 +1,3 @@
-
 module LOD8(
     /* verilator lint_off UNUSED */
     input  logic [7:0] in,

@@ -3,23 +3,6 @@
 
 #include "io_utils.h"
 
-
-// ============================================================================
-// wire_id / SignalArray
-// ============================================================================
-
-
-// ============================================================================
-// Gate function table -- one boolean function per (suffix-stripped) SKY130
-// cell type. Kept out of GateData so GateData itself stays a plain data
-// struct; GateData::evaluate() just looks a type up here.
-//
-// Every entry takes the gate's inputs in netlist pin order and returns its
-// outputs in netlist pin order (single-output gates still return a
-// 1-element vector).
-// ============================================================================
-
-
 inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& input_values) {
     if (input_values.size() != circuit.inputs.size()) {
         throw std::runtime_error("evaluate_circuit: input_values size (" + std::to_string(input_values.size()) +

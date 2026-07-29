@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from sys import argv
 
 # ============================================================================
@@ -75,17 +76,14 @@ def parse_netlist(netlist_path: str):
 
             for pin, conn_bits in connections.items():
                 direction = port_dirs.get(pin)
-                print(direction, pin, conn_bits)
                 if direction is None:
                     direction = "output" if pin.upper() in OUTPUT_PIN_NAMES else "input"
                 for b in conn_bits:
                     if direction == "output":
-                        print("output", b)
                         out_nets.append(b)
                         if not is_const(b):
                             all_bits.add(b)
                     elif direction == "input":
-                        print("input", b)
                         in_nets.append(b)
                         if not is_const(b):
                             all_bits.add(b)
@@ -177,6 +175,8 @@ GATE_FUNCS = {
     # SLEEP is a control pin, not part of the boolean logic, so it's
     # simply not consumed here.
     "lpflow_isobufsrc_1": lambda a, sleep: (a,),
+    "a31oi_1":   lambda a1, a2, a3, b1: (not ((a1 and a2 and a3) or b1),),
+    "o31ai_1":   lambda a1, a2, a3, b1: (not ((a1 or a2 or a3) and b1),)
 }
 
 # Drive strength (trailing _0, _1, _2, _4, _8, ...) doesn't change the
@@ -254,12 +254,23 @@ if __name__ == "__main__":
         exit(1)
 
     input_values = [0, 0, 1, 1, 1, 1, 0, 0]
-    for name, (bits, gates) in parse_netlist(argv[1]).items():
-        print(f"\nModule: {name}")
-        print("Bits:", bits)
-        print("Gates:", gates)
 
+    t0 = time.perf_counter()
+    modules = parse_netlist(argv[1])
+    t1 = time.perf_counter()
+
+    for name, (bits, gates) in modules.items():
+        print(f"\nModule: {name}")
+        #print("Bits:", bits)
+        #print("Gates:", gates)
+
+        t2 = time.perf_counter()
         result = evaluate_circuit(bits, gates, num_inputs=8, num_outputs=3,
                                    input_values=input_values[::-1])
+        t3 = time.perf_counter()
+
         print("Input values:", "".join(str(int(x)) for x in input_values[::-1]))
         print("Output values:", "".join(str(int(x)) for x in result[::-1]))
+        print(f"evaluate_circuit ({name}): {(t3 - t2) * 1e6:.1f} us")
+
+    print(f"parse_netlist: {(t1 - t0) * 1e6:.1f} us")

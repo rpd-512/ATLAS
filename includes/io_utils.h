@@ -10,14 +10,7 @@ static const std::unordered_set<std::string> OUTPUT_PIN_NAMES = {
     "Y", "X", "Q", "QN", "Z", "CO", "COUT", "SO", "S", "SUM"
 };
 
-// ----------------------------------------------------------------------
-// Netlist bits (both port bit-lists and cell connection bit-lists) are
-// JSON arrays mixing real net ids (integers) and constant markers
-// ("0"/"1"/"x"/"z", as strings). raw_bit_t encodes both in one signed
-// integer so no extra struct/variant type is needed:
-//   >= 0            -> real net id, as written in the netlist
-//   RAW_CONST_0/1/X/Z -> the corresponding constant
-// ----------------------------------------------------------------------
+
 using raw_bit_t = int64_t;
 
 constexpr raw_bit_t RAW_CONST_0 = -1;
@@ -213,6 +206,7 @@ inline Circuit parse_netlist(const std::string& netlist_path, const std::string&
         g.id = rc.id;
         g.data.name = rc.raw_type;
         g.data.type = strip_drive_strength(strip_library_prefix(rc.raw_type));
+        g.data.gate_type = gate_type_from_string(g.data.type);   // <-- only new line
 
         g.outputs.reserve(rc.out_nets.size());
         for (raw_bit_t b : rc.out_nets) g.outputs.push_back(r(b));
