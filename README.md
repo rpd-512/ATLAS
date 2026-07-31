@@ -18,7 +18,10 @@ Unlike most open-source EDA flows, ATLAS aims to do this **natively** — withou
 
 ## Status
 
-🚧 ATLAS is being rebuilt from the ground up as a self-contained engine. It previously relied on Yosys and OpenROAD for synthesis and analysis; that integration is being phased out in favor of an in-house implementation. Expect the interfaces, usage, and internals below to change frequently during this phase.
+- ✅ Logic evaluation — done
+- ✅ Area computation — done
+- 🚧 STA (static timing analysis) — in progress
+- ⬜ Power estimation — not started
 
 ## Goals
 
@@ -31,14 +34,15 @@ Unlike most open-source EDA flows, ATLAS aims to do this **natively** — withou
 
 ## Dependencies
 
-None of the external EDA toolchain (Yosys, OpenROAD) is required going forward. The only third-party dependency is:
+None of the external EDA toolchain (Yosys, OpenROAD) is required going forward. The third-party dependencies are:
 
 - [nlohmann/json](https://github.com/nlohmann/json) — for parsing and generating JSON reports
+- [Eigen3](https://eigen.tuxfamily.org/) — used to fit delay/slew surfaces from liberty NLDM tables via least-squares
 
 ## Building
 
 ```bash
-sudo apt install nlohmann-json3-dev   # or install the header manually
+sudo apt install nlohmann-json3-dev libeigen3-dev   # or install the headers manually
 
 make
 ```
@@ -60,6 +64,10 @@ make clean
 ## Usage
 
 Usage is being redesigned alongside the native engine and will be documented here once the first native synthesis/STA/power pass is working end-to-end.
+
+```bash
+./atlas <netlist.json> <liberty.lib>
+```
 
 ## Contributing
 

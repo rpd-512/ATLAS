@@ -2,6 +2,8 @@
 #define ATLAS_UTILS_H
 
 #include "io_utils.h"
+#include "area_utils.h"
+#include "sta_utils.h"
 
 inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& input_values) {
     if (input_values.size() != circuit.inputs.size()) {
@@ -74,17 +76,5 @@ inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& i
     return result;
 }
 
-inline double compute_total_area(const Circuit& circuit,
-                                  std::vector<std::string>* missing_out = nullptr) {
-    double total = 0.0;
-    for (const auto& g : circuit.gates) {
-        if (g.data.area < 0.0) {
-            if (missing_out) missing_out->push_back(g.id);
-            continue;
-        }
-        total += g.data.area;
-    }
-    return total;
-}
 
 #endif // ATLAS_UTILS_H

@@ -2,8 +2,22 @@
 #include <chrono>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "includes/atlas_utils.h"
+
+using Clock = std::chrono::steady_clock;
+
+double elapsed_us(Clock::time_point start, Clock::time_point end) {
+    return std::chrono::duration<double, std::micro>(end - start).count();
+}
+
+std::string to_bitstring(const SignalArray& signals) {
+    std::string out;
+    out.reserve(signals.size());
+    for (bool b : signals) out += (b ? '1' : '0');
+    return out;
+}
 
 int main(int argc, char** argv) {
     if (argc != 3) {
@@ -25,30 +39,38 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto bitstring = [](const SignalArray& s) {
-        std::string out;
-        for (bool b : s) out += (b ? '1' : '0');
-        return out;
-    };
+    std::cout << "Input values: " << to_bitstring(input_values) << "\n";
 
-    std::cout << "Input values: " << bitstring(input_values) << "\n";
-
-    std::reverse(input_values.begin(), input_values.end());   // matches input_values[::-1] in the Python
-    auto t0 = std::chrono::steady_clock::now();
+    // --- evaluate_circuit ---
+    std::reverse(input_values.begin(), input_values.end());  // matches input_values[::-1] in Python
+    Clock::time_point t0 = Clock::now();
     SignalArray result = evaluate_circuit(circuit, input_values);
-    auto t1 = std::chrono::steady_clock::now();
-    std::reverse(result.begin(), result.end());                // matches result[::-1] in the Python
+    Clock::time_point t1 = Clock::now();
+    std::reverse(result.begin(), result.end());  // matches result[::-1] in Python
 
-    std::cout << "Output values: " << bitstring(result) << "\n";
+    double eval_time_us = elapsed_us(t0, t1);
 
-    auto us = [](auto d) { return std::chrono::duration_cast<std::chrono::microseconds>(d).count(); };
-    std::cout << "evaluate_circuit: " << us(t1 - t0) << " us\n";
+    // --- compute_total_area ---
     std::vector<std::string> missing;
+    Clock::time_point t2 = Clock::now();
+    float total_area = compute_total_area(circuit, &missing);
+    Clock::time_point t3 = Clock::now();
+    double area_time_us = elapsed_us(t2, t3);
 
-    std::cout << "total area:       " << compute_total_area(circuit) << " units\n";
+    // --- add more timed steps here the same way ---
+
+    std::cout << "Output values: " << to_bitstring(result) << "\n";
+    std::cout << "total area:       " << total_area << " units\n";
+    
+    std::cout << "\nTime taken:\n";
+    std::cout << "\tevaluate_circuit: " << eval_time_us << " us\n";
+    std::cout << "\tcompute_total_area: " << area_time_us << " us\n";
+    
+    std::cout << "Total time: " << (eval_time_us + area_time_us) << " us\n";
 
     if (!missing.empty()) {
         std::cerr << missing.size() << " gates had no area data\n";
     }
+
     return 0;
 }

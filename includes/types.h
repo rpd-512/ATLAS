@@ -12,8 +12,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
 #include <regex>
 #include <nlohmann/json.hpp>
+
+#include <Eigen/Dense>
 
 using wire_id = uint32_t;
 using SignalArray = std::vector<bool>;
@@ -188,6 +191,17 @@ struct GateData {
         return std::vector<bool>(out.begin(), out.begin() + n);
     }
     float area = -1;              // area in um^2, for area-based fitness
+    
+    std::array<float, MAX_ARITY> input_capacitances{};   // fF, per input pin
+    std::array<float, MAX_ARITY> input_transition{};   // fF, per input pin
+
+
+    float output_capacitance = -1;   // fF — sum of fanout pin caps + wire cap
+    float output_transition = -1;    // ns — resolved via NLDM lookup
+    float delay = -1;                // ns — resolved worst-case arc delay
+    float arrival_time = -1;         // ns — cached, forward topo pass
+    float required_time = -1;        // ns — cached, backward pass
+    float slack = -1;                // ns — required_time - arrival_time
 };
 struct Gate {
     std::string id;                 // cell instance name from the netlist
@@ -202,75 +216,81 @@ struct Circuit {
     std::vector<wire_id> outputs;   // primary output wires, in port-bit order
 };
 
-
 struct LibertyCellData {
-    std::string name;      // raw liberty cell name, unstripped
+    std::string name;
     double area = 0.0;
+    std::array<float, MAX_ARITY> input_capacitances{};
+
+    // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
+    std::array<float, 6> propagation_coeffs{};   // fit from collapsed propagation table
+    std::array<float, 6> slew_coeffs{};          // fit from collapsed slew table
+
+    // keep bounds so you can clamp instead of blindly extrapolate
+    float min_transition = 0.0f, max_transition = 0.0f;
+    float min_load = 0.0f, max_load = 0.0f;
 };
 
-using LibertyLibrary = std::unordered_map<std::string, LibertyCellData>;
+// Fits delay/slew = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
+// over an NLDM table, via closed-form linear least squares (QR solve).
+//
+// index_1: input transition breakpoints (rows of table)
+// index_2: output load breakpoints (columns of table)
+// table:   table[i][j] corresponds to (index_1[i], index_2[j])
+inline std::array<float, 6> fit_nldm_coeffs(
+    const std::vector<float>& index_1,
+    const std::vector<float>& index_2,
+    const std::vector<std::vector<float>>& table)
+{
+    const size_t n = index_1.size();
+    const size_t m = index_2.size();
 
-inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
-    std::ifstream f(liberty_path);
-    if (!f) {
-        throw std::runtime_error("Could not open liberty file: " + liberty_path);
+    if (table.size() != n) {
+        throw std::runtime_error("fit_nldm_coeffs: table row count (" +
+            std::to_string(table.size()) + ") does not match index_1 size (" +
+            std::to_string(n) + ")");
     }
-    std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-
-    // cell ( "name" ) {   or   cell ( name ) {
-    static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
-    static const std::regex area_pattern(
-        R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
-
-    LibertyLibrary cells;
-
-    auto begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
-    auto end   = std::sregex_iterator();
-
-    for (auto it = begin; it != end; ++it) {
-        const std::smatch& match = *it;
-        std::string cell_name = match[1].str();
-
-        // Find the matching closing brace for this cell block, same
-        // depth-counting approach as the Python version.
-        size_t start = static_cast<size_t>(match.position(0) + match.length(0));
-        int depth = 1;
-        size_t i = start;
-        while (i < data.size() && depth > 0) {
-            if (data[i] == '{') ++depth;
-            else if (data[i] == '}') --depth;
-            ++i;
-        }
-        std::string cell_block = data.substr(start, i - start - 1);
-
-        std::smatch area_match;
-        if (std::regex_search(cell_block, area_match, area_pattern)) {
-            LibertyCellData entry;
-            entry.name = cell_name;
-            entry.area = std::stod(area_match[1].str());
-            cells[cell_name] = std::move(entry);
+    for (size_t i = 0; i < n; ++i) {
+        if (table[i].size() != m) {
+            throw std::runtime_error("fit_nldm_coeffs: table row " + std::to_string(i) +
+                " has size " + std::to_string(table[i].size()) +
+                ", expected " + std::to_string(m) + " (index_2 size)");
         }
     }
 
-    return cells;
+    const size_t rows = n * m;
+    Eigen::MatrixXf A(rows, 6);
+    Eigen::VectorXf z(rows);
+
+    size_t r = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const float x = index_1[i];
+        for (size_t j = 0; j < m; ++j) {
+            const float y = index_2[j];
+            A(r, 0) = 1.0f;
+            A(r, 1) = x;
+            A(r, 2) = y;
+            A(r, 3) = x * y;
+            A(r, 4) = x * x;
+            A(r, 5) = y * y;
+            z(r) = table[i][j];
+            ++r;
+        }
+    }
+
+    Eigen::VectorXf solved = A.colPivHouseholderQr().solve(z);
+
+    std::array<float, 6> coeffs{};
+    for (int k = 0; k < 6; ++k) coeffs[k] = solved(k);
+    return coeffs;
 }
 
-// Populates GateData::area on every gate in circuit by looking up
-// gate.data.name (the raw, unstripped cell type) in the liberty library.
-// Gates with no matching liberty entry are left at their default (-1.0);
-// warn_missing controls whether that's reported to stderr.
-inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
-                                 bool warn_missing = true) {
-    for (Gate& g : circuit.gates) {
-        auto it = liberty.find(g.data.name);
-        if (it != liberty.end()) {
-            g.data.area = it->second.area;
-        } else if (warn_missing) {
-            std::cerr << "attach_liberty_data: no liberty entry for cell type '"
-                       << g.data.name << "' (gate '" << g.id << "')\n";
-        }
-    }
-}
 
+inline float eval_nldm(const std::array<float, 6>& c, float x, float y,
+                        float x_min, float x_max, float y_min, float y_max)
+{
+    x = std::clamp(x, x_min, x_max);
+    y = std::clamp(y, y_min, y_max);
+    return c[0] + c[1]*x + c[2]*y + c[3]*x*y + c[4]*x*x + c[5]*y*y;
+}
 
 #endif // TYPES_H

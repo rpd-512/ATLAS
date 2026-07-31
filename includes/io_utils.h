@@ -220,4 +220,55 @@ inline Circuit parse_netlist(const std::string& netlist_path, const std::string&
     return circuit;
 }
 
+
+// Area Eval
+
+using LibertyLibrary = std::unordered_map<std::string, LibertyCellData>;
+
+inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
+    std::ifstream f(liberty_path);
+    if (!f) {
+        throw std::runtime_error("Could not open liberty file: " + liberty_path);
+    }
+    std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    // cell ( "name" ) {   or   cell ( name ) {
+    static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
+    static const std::regex area_pattern(
+        R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+
+    LibertyLibrary cells;
+
+    auto begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
+    auto end   = std::sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+        const std::smatch& match = *it;
+        std::string cell_name = match[1].str();
+
+        // Find the matching closing brace for this cell block, same
+        // depth-counting approach as the Python version.
+        size_t start = static_cast<size_t>(match.position(0) + match.length(0));
+        int depth = 1;
+        size_t i = start;
+        while (i < data.size() && depth > 0) {
+            if (data[i] == '{') ++depth;
+            else if (data[i] == '}') --depth;
+            ++i;
+        }
+        std::string cell_block = data.substr(start, i - start - 1);
+
+        std::smatch area_match;
+        if (std::regex_search(cell_block, area_match, area_pattern)) {
+            LibertyCellData entry;
+            entry.name = cell_name;
+            entry.area = std::stod(area_match[1].str());
+            cells[cell_name] = std::move(entry);
+        }
+    }
+
+    return cells;
+}
+
+
 #endif // IO_UTILS_H
