@@ -174,6 +174,20 @@ inline std::array<bool, 2> evaluate_gate(GateType type, const std::array<bool, M
     }
 }
 
+struct LibertyCellData {
+    std::string name;
+    double area = 0.0;
+    std::array<float, MAX_ARITY> input_capacitances{};
+
+    // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
+    std::array<float, 6> propagation_coeffs{};   // fit from collapsed propagation table
+    std::array<float, 6> slew_coeffs{};          // fit from collapsed slew table
+
+    // keep bounds so you can clamp instead of blindly extrapolate
+    float min_transition = 0.0f, max_transition = 0.0f;
+    float min_load = 0.0f, max_load = 0.0f;
+};
+
 // ----------------------------------------------------------------------
 // Phenotype circuit representation (built by io_utils.h's parse_netlist,
 // consumed by atlas_utils.h's evaluate_circuit).
@@ -195,6 +209,7 @@ struct GateData {
     std::array<float, MAX_ARITY> input_capacitances{};   // fF, per input pin
     std::array<float, MAX_ARITY> input_transition{};   // fF, per input pin
 
+    const LibertyCellData* liberty = nullptr;   // non-owning; must outlive Circuit
 
     float output_capacitance = -1;   // fF — sum of fanout pin caps + wire cap
     float output_transition = -1;    // ns — resolved via NLDM lookup
@@ -216,19 +231,6 @@ struct Circuit {
     std::vector<wire_id> outputs;   // primary output wires, in port-bit order
 };
 
-struct LibertyCellData {
-    std::string name;
-    double area = 0.0;
-    std::array<float, MAX_ARITY> input_capacitances{};
-
-    // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
-    std::array<float, 6> propagation_coeffs{};   // fit from collapsed propagation table
-    std::array<float, 6> slew_coeffs{};          // fit from collapsed slew table
-
-    // keep bounds so you can clamp instead of blindly extrapolate
-    float min_transition = 0.0f, max_transition = 0.0f;
-    float min_load = 0.0f, max_load = 0.0f;
-};
 
 // Fits delay/slew = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
 // over an NLDM table, via closed-form linear least squares (QR solve).

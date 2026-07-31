@@ -236,6 +236,21 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
     static const std::regex area_pattern(
         R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+    // \b before "capacitance" excludes rise_capacitance/fall_capacitance,
+    // since '_' is a word char and leaves no boundary there.
+    static const std::regex capacitance_pattern(
+        R"RGX(\bcapacitance\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+    static const std::regex index1_pattern(R"RGX(index_1\s*\(\s*"([^"]*)"\s*\))RGX");
+    static const std::regex index2_pattern(R"RGX(index_2\s*\(\s*"([^"]*)"\s*\))RGX");
+    static const std::regex num_pattern(R"RGX([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)RGX");
+
+    auto parse_float_list = [](const std::string& s) {
+        std::vector<float> out;
+        for (auto it = std::sregex_iterator(s.begin(), s.end(), num_pattern); it != std::sregex_iterator(); ++it) {
+            out.push_back(std::stof(it->str()));
+        }
+        return out;
+    };
 
     LibertyLibrary cells;
 
@@ -259,16 +274,53 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
         std::string cell_block = data.substr(start, i - start - 1);
 
         std::smatch area_match;
-        if (std::regex_search(cell_block, area_match, area_pattern)) {
-            LibertyCellData entry;
-            entry.name = cell_name;
-            entry.area = std::stod(area_match[1].str());
-            cells[cell_name] = std::move(entry);
+        if (!std::regex_search(cell_block, area_match, area_pattern)) continue;
+
+        LibertyCellData entry;
+        entry.name = cell_name;
+        entry.area = std::stod(area_match[1].str());
+
+        // input_capacitances: one `capacitance : ...;` per input pin, in
+        // file order. `find_pin_dir` walk mirrors io_utils.h's assumption
+        // that pin order in the liberty matches connection order elsewhere --
+        // not re-verified here, just carried over from that same assumption.
+        size_t search_pos = 0, cap_index = 0;
+        std::smatch cap_match;
+        std::string remaining = cell_block;
+        while (cap_index < entry.input_capacitances.size() &&
+               std::regex_search(remaining, cap_match, capacitance_pattern)) {
+            entry.input_capacitances[cap_index++] = std::stof(cap_match[1].str());
+            remaining = cap_match.suffix().str();
         }
+        (void)search_pos;
+
+        // min/max transition & load: take the global min/max across every
+        // index_1/index_2 found in the cell block, rather than parsing which
+        // timing() arc each belongs to.
+        std::vector<float> all_index1, all_index2;
+        for (auto m = std::sregex_iterator(cell_block.begin(), cell_block.end(), index1_pattern);
+             m != std::sregex_iterator(); ++m) {
+            auto vals = parse_float_list((*m)[1].str());
+            all_index1.insert(all_index1.end(), vals.begin(), vals.end());
+        }
+        for (auto m = std::sregex_iterator(cell_block.begin(), cell_block.end(), index2_pattern);
+             m != std::sregex_iterator(); ++m) {
+            auto vals = parse_float_list((*m)[1].str());
+            all_index2.insert(all_index2.end(), vals.begin(), vals.end());
+        }
+        if (!all_index1.empty()) {
+            entry.min_transition = *std::min_element(all_index1.begin(), all_index1.end());
+            entry.max_transition = *std::max_element(all_index1.begin(), all_index1.end());
+        }
+        if (!all_index2.empty()) {
+            entry.min_load = *std::min_element(all_index2.begin(), all_index2.end());
+            entry.max_load = *std::max_element(all_index2.begin(), all_index2.end());
+        }
+
+        cells[cell_name] = std::move(entry);
     }
 
     return cells;
 }
-
 
 #endif // IO_UTILS_H

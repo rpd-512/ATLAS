@@ -6,6 +6,8 @@
 
 #include "includes/atlas_utils.h"
 
+#include "includes/debug_utils.h"
+
 using Clock = std::chrono::steady_clock;
 
 double elapsed_us(Clock::time_point start, Clock::time_point end) {
@@ -30,6 +32,7 @@ int main(int argc, char** argv) {
 
     Circuit circuit = parse_netlist(argv[1]);
     LibertyLibrary liberty = parse_liberty(argv[2]);
+    fill_liberty_test_defaults(liberty);   // TEMP: stub coeffs until parse_liberty extracts real tables
     attach_liberty_data(circuit, liberty);
 
     if (input_values.size() != circuit.inputs.size()) {
@@ -57,20 +60,50 @@ int main(int argc, char** argv) {
     Clock::time_point t3 = Clock::now();
     double area_time_us = elapsed_us(t2, t3);
 
+    // --- run_sta + arrival/required/slack, timed as one STA pipeline ---
+    Clock::time_point t4 = Clock::now();
+    run_sta(circuit);
+    run_sta_arrival(circuit);
+    run_sta_required(circuit);
+    run_sta_slack(circuit);
+    Clock::time_point t5 = Clock::now();
+    double sta_time_us = elapsed_us(t4, t5);
+
     // --- add more timed steps here the same way ---
 
     std::cout << "Output values: " << to_bitstring(result) << "\n";
     std::cout << "total area:       " << total_area << " units\n";
-    
+
+    std::cout << "\nPer-gate timing (AT / RT / Slack):\n";
+    float worst_arrival = 0.0f;
+    std::string critical_gate;
+    for (const Gate& g : circuit.gates) {
+        std::cout << "\t" << g.id << " (" << g.data.type << "): "
+                  << "AT=" << g.data.arrival_time
+                  << " RT=" << g.data.required_time
+                  << " slack=" << g.data.slack << "\n";
+
+        if (g.data.arrival_time > worst_arrival) {
+            worst_arrival = g.data.arrival_time;
+            critical_gate = g.id;
+        }
+    }
+
+    std::cout << "\ncritical path propagation delay: " << worst_arrival
+              << " ns (through " << critical_gate << ")\n";
+
     std::cout << "\nTime taken:\n";
     std::cout << "\tevaluate_circuit: " << eval_time_us << " us\n";
     std::cout << "\tcompute_total_area: " << area_time_us << " us\n";
-    
-    std::cout << "Total time: " << (eval_time_us + area_time_us) << " us\n";
+    std::cout << "\tSTA (run_sta + arrival + required + slack): " << sta_time_us << " us\n";
+
+    std::cout << "Total time: " << (eval_time_us + area_time_us + sta_time_us) << " us\n";
 
     if (!missing.empty()) {
         std::cerr << missing.size() << " gates had no area data\n";
     }
+
+    //print_liberty_library(liberty);
 
     return 0;
 }

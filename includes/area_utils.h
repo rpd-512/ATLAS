@@ -25,14 +25,18 @@ inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
     for (Gate& g : circuit.gates) {
         auto it = liberty.find(g.data.name);
         if (it != liberty.end()) {
-            g.data.area = it->second.area;
+            const LibertyCellData& entry = it->second;
+            g.data.area = static_cast<float>(entry.area);
+            g.data.liberty = &entry;
+
+            size_t n = std::min(entry.input_capacitances.size(), g.data.input_capacitances.size());
+            std::copy_n(entry.input_capacitances.begin(), n, g.data.input_capacitances.begin());
         } else if (warn_missing) {
             std::cerr << "attach_liberty_data: no liberty entry for cell type '"
                        << g.data.name << "' (gate '" << g.id << "')\n";
         }
     }
 }
-
 
 
 #endif // AREA_UTILS_H
