@@ -174,11 +174,7 @@ inline std::array<bool, 2> evaluate_gate(GateType type, const std::array<bool, M
     }
 }
 
-struct LibertyCellData {
-    std::string name;
-    double area = 0.0;
-    std::array<float, MAX_ARITY> input_capacitances{};
-
+struct PinTimingArc {
     // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
     std::array<float, 6> propagation_coeffs{};   // fit from collapsed propagation table
     std::array<float, 6> slew_coeffs{};          // fit from collapsed slew table
@@ -186,6 +182,18 @@ struct LibertyCellData {
     // keep bounds so you can clamp instead of blindly extrapolate
     float min_transition = 0.0f, max_transition = 0.0f;
     float min_load = 0.0f, max_load = 0.0f;
+};
+
+struct LibertyCellData {
+    std::string name;
+    double area = 0.0;
+    std::array<float, MAX_ARITY> input_capacitances{};
+
+    // one timing arc (delay + slew surfaces) per input pin
+    std::array<PinTimingArc, MAX_ARITY> pin_arcs{};
+
+    // number of pins actually populated (arrays are fixed-size for cache friendliness)
+    int num_pins = 0;
 };
 
 // ----------------------------------------------------------------------

@@ -222,7 +222,6 @@ inline Circuit parse_netlist(const std::string& netlist_path, const std::string&
 
 
 // Area Eval
-
 using LibertyLibrary = std::unordered_map<std::string, LibertyCellData>;
 
 inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
@@ -236,13 +235,21 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
     static const std::regex area_pattern(
         R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
-    // \b before "capacitance" excludes rise_capacitance/fall_capacitance,
-    // since '_' is a word char and leaves no boundary there.
+    // pin ( "name" ) {   or   pin ( name ) {
+    static const std::regex pin_pattern(R"RGX(\bpin\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
+    // \b before "capacitance" excludes rise_capacitance/fall_capacitance.
     static const std::regex capacitance_pattern(
         R"RGX(\bcapacitance\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
     static const std::regex index1_pattern(R"RGX(index_1\s*\(\s*"([^"]*)"\s*\))RGX");
     static const std::regex index2_pattern(R"RGX(index_2\s*\(\s*"([^"]*)"\s*\))RGX");
     static const std::regex num_pattern(R"RGX([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)RGX");
+
+    // timing ( ) { ... } -- header has no name inside the parens, unlike
+    // cell(...)/pin(...)/cell_rise(...)/etc.
+    static const std::regex timing_pattern(R"RGX(\btiming\s*\(\s*\)\s*\{)RGX");
+    static const std::regex related_pin_pattern(R"RGX(\brelated_pin\s*:\s*"([^"]+)")RGX");
+    static const std::regex timing_sense_pattern(R"RGX(\btiming_sense\s*:\s*"([^"]+)")RGX");
+    static const std::regex values_kw_pattern(R"RGX(\bvalues\s*\()RGX");
 
     auto parse_float_list = [](const std::string& s) {
         std::vector<float> out;
@@ -252,26 +259,105 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
         return out;
     };
 
+    // Generic "extract up to matching close delimiter" helper, given text
+    // starting just past the opening delimiter.
+    auto extract_delim = [&](const std::string& text, size_t start, char open, char close) -> std::string {
+        int depth = 1;
+        size_t i = start;
+        while (i < text.size() && depth > 0) {
+            if (text[i] == open) ++depth;
+            else if (text[i] == close) --depth;
+            ++i;
+        }
+        return text.substr(start, i - start - 1);
+    };
+    auto extract_block = [&](const std::string& text, size_t start) -> std::string {
+        return extract_delim(text, start, '{', '}');
+    };
+
+    // Find a named sub-block like cell_rise("del_1_7_7") { ... } inside `text`
+    // and return its contents (empty string if absent).
+    auto find_named_subblock = [&](const std::string& text, const std::string& name) -> std::string {
+        std::regex header_pattern("\\b" + name + R"RGX(\s*\(\s*"?[^")]*"?\s*\)\s*\{)RGX");
+        std::smatch m;
+        if (!std::regex_search(text, m, header_pattern)) return std::string();
+        size_t start = static_cast<size_t>(m.position(0) + m.length(0));
+        return extract_block(text, start);
+    };
+
+    // One NLDM lookup table: index_1 (input transition) x index_2 (output
+    // load) -> values.
+    struct NldmTable {
+        std::vector<float> index_1;
+        std::vector<float> index_2;
+        std::vector<std::vector<float>> values;
+        bool valid = false;
+    };
+    auto parse_nldm_table = [&](const std::string& block_text) -> NldmTable {
+        NldmTable t;
+        if (block_text.empty()) return t;
+        std::smatch m;
+        if (std::regex_search(block_text, m, index1_pattern)) t.index_1 = parse_float_list(m[1].str());
+        if (std::regex_search(block_text, m, index2_pattern)) t.index_2 = parse_float_list(m[1].str());
+        if (std::regex_search(block_text, m, values_kw_pattern)) {
+            size_t start = static_cast<size_t>(m.position(0) + m.length(0));
+            std::string values_text = extract_delim(block_text, start, '(', ')');
+            static const std::regex row_pattern(R"RGX("([^"]*)")RGX");
+            for (auto it = std::sregex_iterator(values_text.begin(), values_text.end(), row_pattern);
+                 it != std::sregex_iterator(); ++it) {
+                t.values.push_back(parse_float_list((*it)[1].str()));
+            }
+        }
+        t.valid = !t.index_1.empty() && !t.index_2.empty() && !t.values.empty();
+        return t;
+    };
+
+    // Element-wise average of rise/fall tables for one unate arc (falls
+    // back to whichever side is present if only one is).
+    auto average_tables = [](const NldmTable& a, const NldmTable& b) -> std::vector<std::vector<float>> {
+        if (!a.valid && !b.valid) return {};
+        if (!a.valid) return b.values;
+        if (!b.valid) return a.values;
+        std::vector<std::vector<float>> out = a.values;
+        for (size_t i = 0; i < out.size() && i < b.values.size(); ++i)
+            for (size_t j = 0; j < out[i].size() && j < b.values[i].size(); ++j)
+                out[i][j] = 0.5f * (a.values[i][j] + b.values[i][j]);
+        return out;
+    };
+
+    // Element-wise max across positive_unate / negative_unate (falls back
+    // to whichever unate is present if only one was found).
+    auto max_tables = [](const std::vector<std::vector<float>>& a,
+                          const std::vector<std::vector<float>>& b) -> std::vector<std::vector<float>> {
+        if (a.empty()) return b;
+        if (b.empty()) return a;
+        std::vector<std::vector<float>> out = a;
+        for (size_t i = 0; i < out.size() && i < b.size(); ++i)
+            for (size_t j = 0; j < out[i].size() && j < b[i].size(); ++j)
+                out[i][j] = std::max(a[i][j], b[i][j]);
+        return out;
+    };
+
+    // Averaged (rise+fall)/2 delay & slew tables for a single unate arc,
+    // keyed later by related_pin + timing_sense.
+    struct UnateArc {
+        std::vector<float> index_1, index_2;
+        std::vector<std::vector<float>> delay;  // avg(cell_rise, cell_fall)
+        std::vector<std::vector<float>> slew;   // avg(rise_transition, fall_transition)
+        bool has_index = false;
+    };
+
     LibertyLibrary cells;
 
-    auto begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
-    auto end   = std::sregex_iterator();
+    auto cell_begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
+    auto cell_end   = std::sregex_iterator();
 
-    for (auto it = begin; it != end; ++it) {
+    for (auto it = cell_begin; it != cell_end; ++it) {
         const std::smatch& match = *it;
         std::string cell_name = match[1].str();
 
-        // Find the matching closing brace for this cell block, same
-        // depth-counting approach as the Python version.
-        size_t start = static_cast<size_t>(match.position(0) + match.length(0));
-        int depth = 1;
-        size_t i = start;
-        while (i < data.size() && depth > 0) {
-            if (data[i] == '{') ++depth;
-            else if (data[i] == '}') --depth;
-            ++i;
-        }
-        std::string cell_block = data.substr(start, i - start - 1);
+        size_t cell_start = static_cast<size_t>(match.position(0) + match.length(0));
+        std::string cell_block = extract_block(data, cell_start);
 
         std::smatch area_match;
         if (!std::regex_search(cell_block, area_match, area_pattern)) continue;
@@ -280,42 +366,101 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
         entry.name = cell_name;
         entry.area = std::stod(area_match[1].str());
 
-        // input_capacitances: one `capacitance : ...;` per input pin, in
-        // file order. `find_pin_dir` walk mirrors io_utils.h's assumption
-        // that pin order in the liberty matches connection order elsewhere --
-        // not re-verified here, just carried over from that same assumption.
-        size_t search_pos = 0, cap_index = 0;
-        std::smatch cap_match;
-        std::string remaining = cell_block;
-        while (cap_index < entry.input_capacitances.size() &&
-               std::regex_search(remaining, cap_match, capacitance_pattern)) {
-            entry.input_capacitances[cap_index++] = std::stof(cap_match[1].str());
-            remaining = cap_match.suffix().str();
-        }
-        (void)search_pos;
+        // ---- pass A: collect every timing() sub-block anywhere in the cell,
+        // grouped by (related_pin, timing_sense). These live inside the
+        // *output* pin's block, not the input pin's own block, so this scans
+        // the whole cell rather than per-pin. ----
+        std::unordered_map<std::string, std::unordered_map<std::string, UnateArc>> pin_timing;
 
-        // min/max transition & load: take the global min/max across every
-        // index_1/index_2 found in the cell block, rather than parsing which
-        // timing() arc each belongs to.
-        std::vector<float> all_index1, all_index2;
-        for (auto m = std::sregex_iterator(cell_block.begin(), cell_block.end(), index1_pattern);
-             m != std::sregex_iterator(); ++m) {
-            auto vals = parse_float_list((*m)[1].str());
-            all_index1.insert(all_index1.end(), vals.begin(), vals.end());
+        for (auto tit = std::sregex_iterator(cell_block.begin(), cell_block.end(), timing_pattern);
+             tit != std::sregex_iterator(); ++tit) {
+            size_t t_start = static_cast<size_t>(tit->position(0) + tit->length(0));
+            std::string timing_block = extract_block(cell_block, t_start);
+
+            std::smatch m;
+            if (!std::regex_search(timing_block, m, related_pin_pattern)) continue;
+            std::string related_pin = m[1].str();
+            std::string timing_sense = "positive_unate";
+            if (std::regex_search(timing_block, m, timing_sense_pattern)) timing_sense = m[1].str();
+
+            NldmTable cell_rise = parse_nldm_table(find_named_subblock(timing_block, "cell_rise"));
+            NldmTable cell_fall = parse_nldm_table(find_named_subblock(timing_block, "cell_fall"));
+            NldmTable rise_tr   = parse_nldm_table(find_named_subblock(timing_block, "rise_transition"));
+            NldmTable fall_tr   = parse_nldm_table(find_named_subblock(timing_block, "fall_transition"));
+
+            UnateArc arc;
+            const NldmTable& idx_source = cell_rise.valid ? cell_rise : cell_fall;
+            if (idx_source.valid) {
+                arc.index_1 = idx_source.index_1;
+                arc.index_2 = idx_source.index_2;
+                arc.has_index = true;
+            }
+            arc.delay = average_tables(cell_rise, cell_fall);
+            arc.slew  = average_tables(rise_tr, fall_tr);
+
+            pin_timing[related_pin][timing_sense] = std::move(arc);
         }
-        for (auto m = std::sregex_iterator(cell_block.begin(), cell_block.end(), index2_pattern);
-             m != std::sregex_iterator(); ++m) {
-            auto vals = parse_float_list((*m)[1].str());
-            all_index2.insert(all_index2.end(), vals.begin(), vals.end());
+
+        // ---- pass B: walk each pin(...) sub-block in file order to assign
+        // dense pin indices (same order as before), then pull that pin's
+        // timing data out of pin_timing by name. ----
+        auto pin_begin = std::sregex_iterator(cell_block.begin(), cell_block.end(), pin_pattern);
+        auto pin_end   = std::sregex_iterator();
+
+        size_t pin_index = 0;
+        for (auto pit = pin_begin; pit != pin_end && pin_index < entry.input_capacitances.size(); ++pit) {
+            const std::smatch& pmatch = *pit;
+            std::string pin_name = pmatch[1].str();
+            size_t pin_start = static_cast<size_t>(pmatch.position(0) + pmatch.length(0));
+            std::string pin_block = extract_block(cell_block, pin_start);
+
+            // capacitance: only meaningful on input pins; output pins don't
+            // carry one, so a missing match here just skips without
+            // consuming a pin_index slot.
+            std::smatch cap_match;
+            if (!std::regex_search(pin_block, cap_match, capacitance_pattern)) {
+                continue;
+            }
+            entry.input_capacitances[pin_index] = std::stof(cap_match[1].str());
+
+            PinTimingArc& arc = entry.pin_arcs[pin_index];
+
+            auto pt_it = pin_timing.find(pin_name);
+            if (pt_it != pin_timing.end()) {
+                std::vector<std::vector<float>> delay_max, slew_max;
+                std::vector<float> index_1, index_2;
+                bool have_index = false;
+
+                // max across positive_unate / negative_unate (each side
+                // already averaged rise+fall in pass A)
+                for (const auto& [sense, arc_data] : pt_it->second) {
+                    (void)sense;
+                    delay_max = max_tables(delay_max, arc_data.delay);
+                    slew_max  = max_tables(slew_max, arc_data.slew);
+                    if (!have_index && arc_data.has_index) {
+                        index_1 = arc_data.index_1;
+                        index_2 = arc_data.index_2;
+                        have_index = true;
+                    }
+                }
+
+                if (have_index && !index_1.empty() && !index_2.empty()) {
+                    arc.min_transition = *std::min_element(index_1.begin(), index_1.end());
+                    arc.max_transition = *std::max_element(index_1.begin(), index_1.end());
+                    arc.min_load = *std::min_element(index_2.begin(), index_2.end());
+                    arc.max_load = *std::max_element(index_2.begin(), index_2.end());
+
+                    if (!delay_max.empty())
+                        arc.propagation_coeffs = fit_nldm_coeffs(index_1, index_2, delay_max);
+                    if (!slew_max.empty())
+                        arc.slew_coeffs = fit_nldm_coeffs(index_1, index_2, slew_max);
+                }
+            }
+
+            ++pin_index;
         }
-        if (!all_index1.empty()) {
-            entry.min_transition = *std::min_element(all_index1.begin(), all_index1.end());
-            entry.max_transition = *std::max_element(all_index1.begin(), all_index1.end());
-        }
-        if (!all_index2.empty()) {
-            entry.min_load = *std::min_element(all_index2.begin(), all_index2.end());
-            entry.max_load = *std::max_element(all_index2.begin(), all_index2.end());
-        }
+
+        entry.num_pins = static_cast<int>(pin_index);
 
         cells[cell_name] = std::move(entry);
     }

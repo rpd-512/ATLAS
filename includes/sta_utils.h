@@ -44,13 +44,11 @@ inline void run_sta(Circuit& circuit, float default_input_transition = 0.01f) {
             }
             visiting[gidx] = true;
 
-            // input_transition[k] = transition arriving on pin k; max over all pins
-            // feeds the delay/slew surface, per-pin values still individually stored
-            float max_in_trans = 0.0f;
+            // input_transition[k] = transition arriving on pin k; per-pin values still
+            // individually stored since each pin now has its own delay/slew arc
             for (size_t k = 0; k < g.inputs.size(); ++k) {
                 float t = transition_of(g.inputs[k]);
                 if (k < g.data.input_transition.size()) g.data.input_transition[k] = t;
-                max_in_trans = std::max(max_in_trans, t);
             }
 
             // output_capacitance = sum of fanout pin caps across every output pin
@@ -67,12 +65,40 @@ inline void run_sta(Circuit& circuit, float default_input_transition = 0.01f) {
             }
             const LibertyCellData& lib = *g.data.liberty;
 
-            g.data.delay = eval_nldm(lib.propagation_coeffs, max_in_trans, out_cap,
-                                      lib.min_transition, lib.max_transition,
-                                      lib.min_load, lib.max_load);
-            g.data.output_transition = eval_nldm(lib.slew_coeffs, max_in_trans, out_cap,
-                                                  lib.min_transition, lib.max_transition,
-                                                  lib.min_load, lib.max_load);
+            // Each input pin has its own fitted delay/slew surface (pin_arcs[k]).
+            // Gate delay is the max over all input arcs -- the critical (slowest)
+            // input pin sets the timing. Output transition is taken from that same
+            // pin's slew surface, not mixed with another pin's, so delay and slew
+            // stay physically consistent with one another.
+            size_t num_arcs = std::min(g.inputs.size(), lib.pin_arcs.size());
+            if (lib.num_pins > 0) {
+                num_arcs = std::min(num_arcs, static_cast<size_t>(lib.num_pins));
+            }
+            if (num_arcs == 0) {
+                throw std::runtime_error("run_sta: gate '" + g.id + "' liberty data has no pin arcs");
+            }
+
+            float worst_delay = -std::numeric_limits<float>::infinity();
+            float worst_slew = 0.0f;
+            for (size_t k = 0; k < num_arcs; ++k) {
+                float t_in = (k < g.data.input_transition.size())
+                                 ? g.data.input_transition[k]
+                                 : default_input_transition;
+                const PinTimingArc& arc = lib.pin_arcs[k];
+
+                float d = eval_nldm(arc.propagation_coeffs, t_in, out_cap,
+                                     arc.min_transition, arc.max_transition,
+                                     arc.min_load, arc.max_load);
+                if (d > worst_delay) {
+                    worst_delay = d;
+                    worst_slew = eval_nldm(arc.slew_coeffs, t_in, out_cap,
+                                           arc.min_transition, arc.max_transition,
+                                           arc.min_load, arc.max_load);
+                }
+            }
+
+            g.data.delay = worst_delay;
+            g.data.output_transition = worst_slew;
 
             visiting[gidx] = false;
             done[gidx] = true;
@@ -88,10 +114,6 @@ inline void run_sta(Circuit& circuit, float default_input_transition = 0.01f) {
         for (wire_id ow : circuit.gates[gi].outputs) transition_of(ow);
     }
 }
-
-
-
-
 
 
 inline void run_sta_arrival(Circuit& circuit) {

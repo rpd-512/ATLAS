@@ -32,7 +32,6 @@ int main(int argc, char** argv) {
 
     Circuit circuit = parse_netlist(argv[1]);
     LibertyLibrary liberty = parse_liberty(argv[2]);
-    fill_liberty_test_defaults(liberty);   // TEMP: stub coeffs until parse_liberty extracts real tables
     attach_liberty_data(circuit, liberty);
 
     if (input_values.size() != circuit.inputs.size()) {

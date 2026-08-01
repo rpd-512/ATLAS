@@ -20,17 +20,16 @@ Unlike most open-source EDA flows, ATLAS aims to do this **natively** — withou
 
 - ✅ Logic evaluation — done
 - ✅ Area computation — done
-- 🚧 STA (static timing analysis) — in progress
-- ⬜ Power estimation — not started
+- ✅ STA (static timing analysis) — done
+- 🚧 Power estimation — in progress
 
 ## Goals
 
-- [ ] Native RTL parsing / elaboration for a practical subset of SystemVerilog and Verilog
-- [ ] In-house logic synthesis and technology mapping against standard-cell liberty files
-- [ ] Native static timing analysis (STA) via graph-based arrival/slack propagation
-- [ ] Static and dynamic power estimation from liberty data
-- [ ] Area and design statistics extraction
-- [ ] JSON report generation (via [nlohmann/json](https://github.com/nlohmann/json))
+- [x] Native RTL parsing / elaboration for a practical subset of SystemVerilog and Verilog
+- [x] In-house logic synthesis and technology mapping against standard-cell liberty files
+- [x] Native static timing analysis (STA) via graph-based arrival/slack propagation
+- [x] Area and design statistics extraction
+- [ ] Static power estimation from liberty data
 
 ## Dependencies
 
