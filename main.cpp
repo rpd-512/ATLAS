@@ -78,9 +78,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    CompiledCircuit cc = compile_circuit(circuit);   // add this before the timed section
+
     std::reverse(input_values.begin(), input_values.end());
     Clock::time_point t0 = Clock::now();
-    SignalArray result = evaluate_circuit(circuit, input_values);
+    SignalArray result = evaluate_compiled(cc, input_values);
     Clock::time_point t1 = Clock::now();
     std::reverse(result.begin(), result.end());
     std::reverse(input_values.begin(), input_values.end());

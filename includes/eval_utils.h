@@ -134,77 +134,120 @@ compile_boolean_expr(const std::string& expr) {
         return ast->eval(vars);
     };
 }
+struct CompiledCircuit {
+    // dense wire ids: 0..num_wires-1
+    std::unordered_map<wire_id, int> wire_index;      // built once, not used in hot path
+    std::vector<int> input_slot;                       // circuit.inputs[i] -> dense idx
+    std::vector<int> output_slot;                       // circuit.outputs[i] -> dense idx
 
-inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& input_values) {
-    if (input_values.size() != circuit.inputs.size()) {
-        throw std::runtime_error("evaluate_circuit: input_values size (" + std::to_string(input_values.size()) +
-                                  ") does not match circuit.inputs size (" + std::to_string(circuit.inputs.size()) + ")");
-    }
+    // gates in topological order, ready to evaluate front-to-back
+    struct GateOp {
+        const GateData* data;                           // pointer into original circuit
+        std::vector<int> arg_slots;                      // dense indices of inputs
+        std::vector<int> out_slots;                       // dense indices of outputs
+    };
+    std::vector<GateOp> topo_gates;
 
-    std::unordered_map<wire_id, bool> input_map;
-    input_map.reserve(circuit.inputs.size());
-    for (size_t i = 0; i < circuit.inputs.size(); ++i) {
-        input_map[circuit.inputs[i]] = input_values[i];
-    }
+    int num_wires = 0;
+};
 
-    // wire -> (gate index, output pin index within that gate)
-    std::unordered_map<wire_id, std::pair<size_t, size_t>> driver_of;
-    for (size_t g = 0; g < circuit.gates.size(); ++g) {
-        const auto& outs = circuit.gates[g].outputs;
-        for (size_t p = 0; p < outs.size(); ++p) {
-            driver_of[outs[p]] = {g, p};
-        }
-    }
+inline CompiledCircuit compile_circuit(const Circuit& circuit) {
+    CompiledCircuit cc;
 
-    std::vector<bool> node_done(circuit.gates.size(), false);
-    std::vector<char> node_visiting(circuit.gates.size(), false);   // combinational-loop guard
-    std::vector<std::vector<bool>> node_result(circuit.gates.size());
-
-    std::function<bool(wire_id)> value_of = [&](wire_id w) -> bool {
-        if (w == WIRE_CONST_0) return false;
-        if (w == WIRE_CONST_1) return true;
-
-        auto in_it = input_map.find(w);
-        if (in_it != input_map.end()) return in_it->second;
-
-        auto drv_it = driver_of.find(w);
-        if (drv_it == driver_of.end()) {
-            throw std::runtime_error("evaluate_circuit: wire " + std::to_string(w) +
-                                      " is neither a primary input nor any gate's output");
-        }
-
-        size_t gidx = drv_it->second.first;
-        size_t pidx = drv_it->second.second;
-
-        if (!node_done[gidx]) {
-            if (node_visiting[gidx]) {
-                throw std::runtime_error("evaluate_circuit: combinational loop through gate '" +
-                                          circuit.gates[gidx].id + "'");
-            }
-            node_visiting[gidx] = true;
-
-            const Gate& g = circuit.gates[gidx];
-            std::vector<bool> args;
-            args.reserve(g.inputs.size());
-            for (wire_id in_w : g.inputs) {
-                args.push_back(value_of(in_w));
-            }
-            node_result[gidx] = g.data.evaluate(args);
-
-            node_visiting[gidx] = false;
-            node_done[gidx] = true;
-        }
-
-        return node_result[gidx].at(pidx);
+    auto dense_id = [&](wire_id w) -> int {
+        auto it = cc.wire_index.find(w);
+        if (it != cc.wire_index.end()) return it->second;
+        int idx = cc.num_wires++;
+        cc.wire_index.emplace(w, idx);
+        return idx;
     };
 
-    SignalArray result;
-    result.reserve(circuit.outputs.size());
-    for (wire_id w : circuit.outputs) {
-        result.push_back(value_of(w));
+    // constants get fixed slots
+    dense_id(WIRE_CONST_0);
+    dense_id(WIRE_CONST_1);
+
+    cc.input_slot.resize(circuit.inputs.size());
+    for (size_t i = 0; i < circuit.inputs.size(); ++i)
+        cc.input_slot[i] = dense_id(circuit.inputs[i]);
+
+    std::unordered_map<wire_id, std::pair<size_t,size_t>> driver_of;
+    for (size_t g = 0; g < circuit.gates.size(); ++g)
+        for (size_t p = 0; p < circuit.gates[g].outputs.size(); ++p)
+            driver_of[circuit.gates[g].outputs[p]] = {g, p};
+
+    // iterative topo sort via DFS (post-order), same loop detection as before
+    std::vector<char> state(circuit.gates.size(), 0); // 0=unvisited,1=visiting,2=done
+    std::vector<size_t> order;
+    order.reserve(circuit.gates.size());
+
+    std::function<void(size_t)> visit = [&](size_t g) {
+        if (state[g] == 2) return;
+        if (state[g] == 1)
+            throw std::runtime_error("evaluate_circuit: combinational loop through gate '" +
+                                      circuit.gates[g].id + "'");
+        state[g] = 1;
+        for (wire_id in_w : circuit.gates[g].inputs) {
+            if (in_w == WIRE_CONST_0 || in_w == WIRE_CONST_1) continue;
+            bool is_input = std::find(circuit.inputs.begin(), circuit.inputs.end(), in_w) != circuit.inputs.end();
+            if (is_input) continue;
+            auto it = driver_of.find(in_w);
+            if (it == driver_of.end())
+                throw std::runtime_error("evaluate_circuit: wire " + std::to_string(in_w) +
+                                          " is neither a primary input nor any gate's output");
+            visit(it->second.first);
+        }
+        state[g] = 2;
+        order.push_back(g);
+    };
+    for (size_t g = 0; g < circuit.gates.size(); ++g) visit(g);
+
+    cc.topo_gates.reserve(order.size());
+    for (size_t g : order) {
+        CompiledCircuit::GateOp op;
+        op.data = &circuit.gates[g].data;
+        op.arg_slots.reserve(circuit.gates[g].inputs.size());
+        for (wire_id w : circuit.gates[g].inputs) op.arg_slots.push_back(dense_id(w));
+        op.out_slots.reserve(circuit.gates[g].outputs.size());
+        for (wire_id w : circuit.gates[g].outputs) op.out_slots.push_back(dense_id(w));
+        cc.topo_gates.push_back(std::move(op));
     }
+
+    cc.output_slot.resize(circuit.outputs.size());
+    for (size_t i = 0; i < circuit.outputs.size(); ++i)
+        cc.output_slot[i] = dense_id(circuit.outputs[i]);
+
+    return cc;
+}
+
+// Hot path — call this per input vector, as many times as you want.
+inline SignalArray evaluate_compiled(const CompiledCircuit& cc, const SignalArray& input_values) {
+    if (input_values.size() != cc.input_slot.size())
+        throw std::runtime_error("evaluate_compiled: input size mismatch");
+
+    std::vector<uint8_t> wire(cc.num_wires);   // uint8_t, not vector<bool> — avoids bitset overhead
+    // constants: slot 0/1 reserved by construction order above if you want, or just set explicitly
+    wire[cc.wire_index.at(WIRE_CONST_0)] = 0;   // fine to leave — precompute a template `wire` array once per CompiledCircuit if you want to skip this
+    wire[cc.wire_index.at(WIRE_CONST_1)] = 1;
+
+    for (size_t i = 0; i < cc.input_slot.size(); ++i)
+        wire[cc.input_slot[i]] = static_cast<uint8_t>(input_values[i]);
+
+    std::vector<bool> args_buf; // reused scratch, avoid realloc per gate
+    for (const auto& op : cc.topo_gates) {
+        args_buf.resize(op.arg_slots.size());
+        for (size_t i = 0; i < op.arg_slots.size(); ++i)
+            args_buf[i] = wire[op.arg_slots[i]];
+        std::vector<bool> outs = op.data->evaluate(args_buf); // still calls your existing gate eval
+        for (size_t p = 0; p < op.out_slots.size(); ++p)
+            wire[op.out_slots[p]] = outs[p];
+    }
+
+    SignalArray result;
+    result.reserve(cc.output_slot.size());
+    for (int s : cc.output_slot) result.push_back(wire[s]);
     return result;
 }
+
 
 // ---------------------------------------------------------------------
 // Truth-table checking
@@ -253,9 +296,11 @@ inline size_t check_against_truth_table(const TruthTable& table,
 // Returns the total number of output bits that differed, summed across
 // every row -- 0 means the circuit matches the truth table exactly.
 inline size_t check_truth_table_exhaustive(const Circuit& circuit, const TruthTable& table) {
+    CompiledCircuit cc = compile_circuit(circuit);   // one-time cost
+
     size_t total_mismatches = 0;
     for (const auto& row : table.rows) {
-        SignalArray actual_output = evaluate_circuit(circuit, row.inputs);
+        SignalArray actual_output = evaluate_compiled(cc, row.inputs);
         total_mismatches += check_against_truth_table(table, row.inputs, actual_output);
     }
     return total_mismatches;
