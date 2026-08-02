@@ -263,6 +263,7 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     static const std::regex related_pin_pattern(R"RGX(\brelated_pin\s*:\s*"([^"]+)")RGX");
     static const std::regex timing_sense_pattern(R"RGX(\btiming_sense\s*:\s*"([^"]+)")RGX");
     static const std::regex values_kw_pattern(R"RGX(\bvalues\s*\()RGX");
+    static const std::regex internal_power_pattern(R"RGX(\binternal_power\s*\(\s*\)\s*\{)RGX");
 
     auto parse_float_list = [](const std::string& s) {
         std::vector<float> out;
@@ -360,6 +361,12 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
         bool has_index = false;
     };
 
+    struct PowerArc {
+        std::vector<float> index_1, index_2;
+        std::vector<std::vector<float>> power;   // avg(rise_power, fall_power)
+        bool has_index = false;
+    };
+
     LibertyLibrary cells;
 
     // Library-level nom_voltage: appears once, before any cell(...) blocks,
@@ -427,7 +434,40 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
 
             pin_timing[related_pin][timing_sense] = std::move(arc);
         }
+        
+        // ---- pass A.2: collect every internal_power() sub-block, grouped
+        // by related_pin. Same block-scanning approach as timing() above,
+        // but simpler -- no timing_sense split, just rise/fall averaging. ----
+        std::unordered_map<std::string, PowerArc> pin_power;
 
+        for (auto pit = std::sregex_iterator(cell_block.begin(), cell_block.end(), internal_power_pattern);
+             pit != std::sregex_iterator(); ++pit) {
+            size_t p_start = static_cast<size_t>(pit->position(0) + pit->length(0));
+            std::string power_block = extract_block(cell_block, p_start);
+
+            std::smatch m;
+            if (!std::regex_search(power_block, m, related_pin_pattern)) continue;
+            std::string related_pin = m[1].str();
+
+            NldmTable rise_p = parse_nldm_table(find_named_subblock(power_block, "rise_power"));
+            NldmTable fall_p = parse_nldm_table(find_named_subblock(power_block, "fall_power"));
+
+            PowerArc parc;
+            const NldmTable& idx_source = rise_p.valid ? rise_p : fall_p;
+            if (idx_source.valid) {
+                parc.index_1 = idx_source.index_1;
+                parc.index_2 = idx_source.index_2;
+                parc.has_index = true;
+            }
+            parc.power = average_tables(rise_p, fall_p);
+
+            // Note: if a cell has multiple internal_power() blocks for the
+            // same related_pin (e.g. one per output pin on a multi-output
+            // cell), this keeps only the last one seen -- same limitation
+            // pin_timing already has for repeated (related_pin, sense)
+            // pairs. Fine for the single-output cells in this library.
+            pin_power[related_pin] = std::move(parc);
+        }
         // ---- pass B: walk each pin(...) sub-block in file order. Input
         // pins (have `capacitance`) get a dense pin_index and their timing
         // arc pulled from pin_timing; output pins (have `function` instead)
@@ -491,7 +531,29 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
                         arc.slew_coeffs = fit_nldm_coeffs(index_1, index_2, slew_max);
                 }
             }
+            
+            // Power arc: same related_pin key space as timing, but its own
+            // index bounds/table since internal_power's index_1/index_2
+            // breakpoints don't have to match the timing arc's.
+            auto pw_it = pin_power.find(pin_name);
+            if (pw_it != pin_power.end() && pw_it->second.has_index &&
+                !pw_it->second.index_1.empty() && !pw_it->second.index_2.empty() &&
+                !pw_it->second.power.empty()) {
+                arc.power_coeffs = fit_nldm_coeffs(pw_it->second.index_1, pw_it->second.index_2, pw_it->second.power);
 
+                // Only backfill transition/load bounds from the power arc if
+                // the timing arc above didn't already set them (min==max==0
+                // is the untouched default) -- timing's bounds take priority
+                // since propagation_coeffs/slew_coeffs are the primary use.
+                if (arc.min_transition == 0.0f && arc.max_transition == 0.0f) {
+                    arc.min_transition = *std::min_element(pw_it->second.index_1.begin(), pw_it->second.index_1.end());
+                    arc.max_transition = *std::max_element(pw_it->second.index_1.begin(), pw_it->second.index_1.end());
+                }
+                if (arc.min_load == 0.0f && arc.max_load == 0.0f) {
+                    arc.min_load = *std::min_element(pw_it->second.index_2.begin(), pw_it->second.index_2.end());
+                    arc.max_load = *std::max_element(pw_it->second.index_2.begin(), pw_it->second.index_2.end());
+                }
+            }
             ++pin_index;
         }
 

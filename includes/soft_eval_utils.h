@@ -137,7 +137,16 @@ compile_soft_expr(const std::string& expr) {
 
 using SoftSignalArray = std::vector<float>;
 
-inline SoftSignalArray evaluate_circuit_soft(const Circuit& circuit, const SoftSignalArray& input_values) {
+// Static-probability switching-activity estimator: for a signal with
+// probability p of being 1 (as produced by the product t-norm relaxation),
+// the expected toggle rate under the standard independent-transitions
+// model is 2*p*(1-p) -- 0 at the corners (p=0 or p=1, signal never
+// switches), peaking at p=0.5 (maximally uncertain / most active).
+inline float toggle_rate_from_prob(float p) {
+    return 2.0f * p * (1.0f - p);
+}
+
+inline SoftSignalArray evaluate_circuit_soft(Circuit& circuit, const SoftSignalArray& input_values) {
     if (input_values.size() != circuit.inputs.size()) {
         throw std::runtime_error("evaluate_circuit_soft: input_values size (" + std::to_string(input_values.size()) +
                                   ") does not match circuit.inputs size (" + std::to_string(circuit.inputs.size()) + ")");
@@ -185,13 +194,22 @@ inline SoftSignalArray evaluate_circuit_soft(const Circuit& circuit, const SoftS
             }
             node_visiting[gidx] = true;
 
-            const Gate& g = circuit.gates[gidx];
+            Gate& g = circuit.gates[gidx];
             std::vector<float> args;
             args.reserve(g.inputs.size());
             for (wire_id in_w : g.inputs) {
                 args.push_back(value_of(in_w));
             }
             node_result[gidx] = g.data.evaluate_soft(args);
+
+            // Derive per-output toggle rate from the soft-evaluated output
+            // probabilities and cache it on the gate, same convention as
+            // the STA passes writing arrival_time/slack in place.
+            g.data.toggle_rate.clear();
+            g.data.toggle_rate.reserve(node_result[gidx].size());
+            for (float p : node_result[gidx]) {
+                g.data.toggle_rate.push_back(toggle_rate_from_prob(p));
+            }
 
             node_visiting[gidx] = false;
             node_done[gidx] = true;

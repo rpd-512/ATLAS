@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "includes/atlas_utils.h"
-
 #include "includes/debug_utils.h"
 
 using Clock = std::chrono::steady_clock;
@@ -31,19 +30,22 @@ std::string to_soft_string(const SoftSignalArray& signals) {
     return out;
 }
 
+void print_section(const std::string& title) {
+    std::cout << "\n=== " << title << " ===\n";
+}
+
 int main(int argc, char** argv) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <netlist.json> <liberty.lib>\n";
         return 1;
     }
 
-    // same hardcoded pattern as the Python script's __main__
-    SignalArray input_values = {0, 1, 0, 0,
-                                 1, 1, 1, 1,};
     Circuit circuit = parse_netlist(argv[1]);
     LibertyLibrary liberty = parse_liberty(argv[2]);
     attach_liberty_data(circuit, liberty);
-    //print_liberty_library(liberty);
+
+    SignalArray input_values = {0, 1, 0, 0,
+                                 1, 1, 1, 1};
 
     if (input_values.size() != circuit.inputs.size()) {
         std::cerr << "Netlist has " << circuit.inputs.size() << " input bit(s), "
@@ -52,24 +54,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Input values: " << to_bitstring(input_values) << "\n";
-
-    // --- evaluate_circuit ---
-    std::reverse(input_values.begin(), input_values.end());  // matches input_values[::-1] in Python
-    Clock::time_point t0 = Clock::now();
-    SignalArray result = evaluate_circuit(circuit, input_values);
-    Clock::time_point t1 = Clock::now();
-    std::reverse(result.begin(), result.end());  // matches result[::-1] in Python
-
-    double eval_time_us = elapsed_us(t0, t1);
-
-    // --- evaluate_circuit_soft (continuous relaxation demo) ---
-    // Independent, fractional input set -- these are *not* meant to match
-    // input_values; the point is to exercise values strictly inside (0,1),
-    // where the product t-norm relaxation actually diverges from boolean
-    // logic (at the {0,1} corners it agrees with evaluate_circuit exactly).
-    SoftSignalArray soft_input_values = {0.5,0.5,0.5,0.5,
-                                         0.5,0.5,0.5,0.5};
+    SoftSignalArray soft_input_values = {0.5, 0.5, 0.5, 0.5,
+                                          0.5, 0.5, 0.5, 0.5};
 
     if (soft_input_values.size() != circuit.inputs.size()) {
         std::cerr << "Netlist has " << circuit.inputs.size() << " input bit(s), "
@@ -78,25 +64,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Soft input values: " << to_soft_string(soft_input_values) << "\n";
+    std::reverse(input_values.begin(), input_values.end());
+    Clock::time_point t0 = Clock::now();
+    SignalArray result = evaluate_circuit(circuit, input_values);
+    Clock::time_point t1 = Clock::now();
+    std::reverse(result.begin(), result.end());
+    std::reverse(input_values.begin(), input_values.end());
+    double eval_time_us = elapsed_us(t0, t1);
 
-    std::reverse(soft_input_values.begin(), soft_input_values.end());  // same wire-order convention as input_values
-    Clock::time_point ts0 = Clock::now();
-    SoftSignalArray soft_result = evaluate_circuit_soft(circuit, soft_input_values);
-    Clock::time_point ts1 = Clock::now();
-    std::reverse(soft_result.begin(), soft_result.end());  // matches result[::-1] convention
-    std::reverse(soft_input_values.begin(), soft_input_values.end());  // restore original order for printing
-
-    double soft_eval_time_us = elapsed_us(ts0, ts1);
-
-    // --- compute_total_area ---
-    std::vector<std::string> missing;
+    std::vector<std::string> missing_area;
     Clock::time_point t2 = Clock::now();
-    float total_area = compute_total_area(circuit, &missing);
+    float total_area = compute_total_area(circuit, &missing_area);
     Clock::time_point t3 = Clock::now();
     double area_time_us = elapsed_us(t2, t3);
 
-    // --- run_sta + arrival/required/slack, timed as one STA pipeline ---
     Clock::time_point t4 = Clock::now();
     run_sta(circuit);
     run_sta_arrival(circuit);
@@ -105,52 +86,82 @@ int main(int argc, char** argv) {
     Clock::time_point t5 = Clock::now();
     double sta_time_us = elapsed_us(t4, t5);
 
-    // --- run power analysis ---
     Clock::time_point t6 = Clock::now();
     float static_power = compute_static_power(circuit);
     Clock::time_point t7 = Clock::now();
-    double power_time_us = elapsed_us(t6, t7);
+    double static_power_time_us = elapsed_us(t6, t7);
 
-    std::cout << "Output values: " << to_bitstring(result) << "\n";
-    std::cout << "total area:       " << total_area << " units\n";
-    std::cout << "static power:     " << static_power << " W\n";
+    std::reverse(soft_input_values.begin(), soft_input_values.end());
+    Clock::time_point ts0 = Clock::now();
+    SoftSignalArray soft_result = evaluate_circuit_soft(circuit, soft_input_values);
+    Clock::time_point ts1 = Clock::now();
+    std::reverse(soft_result.begin(), soft_result.end());
+    std::reverse(soft_input_values.begin(), soft_input_values.end());
+    double soft_eval_time_us = elapsed_us(ts0, ts1);
 
-    std::cout << "\nSoft eval demo (continuous relaxation, product t-norm):\n";
-    std::cout << "\tsoft input values:  " << to_soft_string(soft_input_values) << "\n";
-    std::cout << "\tsoft output values: " << to_soft_string(soft_result) << "\n";
+    std::vector<std::string> missing_switching;
+    Clock::time_point tp0 = Clock::now();
+    float switching_power = compute_switching_power(circuit, &missing_switching);
+    Clock::time_point tp1 = Clock::now();
+    double switching_power_time_us = elapsed_us(tp0, tp1);
 
-    std::cout << "\nPer-gate timing (AT / RT / Slack):\n";
+    std::vector<std::string> missing_internal;
+    Clock::time_point ti0 = Clock::now();
+    float internal_power = compute_internal_power(circuit, &missing_internal);
+    Clock::time_point ti1 = Clock::now();
+    double internal_power_time_us = elapsed_us(ti0, ti1);
+
     float worst_arrival = 0.0f;
     std::string critical_gate;
     for (const Gate& g : circuit.gates) {
-        //std::cout << "\t" << g.id << " (" << g.data.type << "): "
-        //          << "AT=" << g.data.arrival_time
-        //          << " RT=" << g.data.required_time
-        //          << " slack=" << g.data.slack << "\n";
-
         if (g.data.arrival_time > worst_arrival) {
             worst_arrival = g.data.arrival_time;
             critical_gate = g.id;
         }
     }
 
-    std::cout << "\ncritical path propagation delay: " << worst_arrival
-              << " ns (through " << critical_gate << ")\n";
+    print_section("Functional evaluation");
+    std::cout << "input values:  " << to_bitstring(input_values) << "\n";
+    std::cout << "output values: " << to_bitstring(result) << "\n";
 
-    std::cout << "\nTime taken:\n";
-    std::cout << "\tevaluate_circuit: " << eval_time_us << " us\n";
-    std::cout << "\tevaluate_circuit_soft: " << soft_eval_time_us << " us\n";
-    std::cout << "\tcompute_total_area: " << area_time_us << " us\n";
-    std::cout << "\tSTA (run_sta + arrival + required + slack): " << sta_time_us << " us\n";
-    std::cout << "\tcompute_static_power: " << power_time_us << " us\n";
+    print_section("Soft evaluation (product t-norm)");
+    std::cout << "soft input values:  " << to_soft_string(soft_input_values) << "\n";
+    std::cout << "soft output values: " << to_soft_string(soft_result) << "\n";
 
-    std::cout << "Total time: " << (eval_time_us + soft_eval_time_us + area_time_us + sta_time_us) << " us\n";
-
-    if (!missing.empty()) {
-        std::cerr << missing.size() << " gates had no area data\n";
+    print_section("Area");
+    std::cout << "total area: " << total_area << " units\n";
+    if (!missing_area.empty()) {
+        std::cout << "gates missing area data: " << missing_area.size() << "\n";
     }
 
-    //print_liberty_library(liberty);
+    print_section("Static timing analysis");
+    std::cout << "critical path delay: " << worst_arrival << " ns\n";
+    std::cout << "critical gate:       " << critical_gate << "\n";
+
+    print_section("Power");
+    std::cout << "static power:    " << static_power << " W\n";
+    std::cout << "switching power: " << switching_power << " W\n";
+    std::cout << "internal power:  " << internal_power << " W\n";
+    std::cout << "total power:     " << (static_power + switching_power + internal_power) << " W\n";
+    if (!missing_switching.empty()) {
+        std::cout << "gates missing switching power inputs: " << missing_switching.size() << "\n";
+    }
+    if (!missing_internal.empty()) {
+        std::cout << "gates missing internal power inputs:  " << missing_internal.size() << "\n";
+    }
+
+    print_section("Timing breakdown");
+    std::cout << "evaluate_circuit:        " << eval_time_us << " us\n";
+    std::cout << "compute_total_area:      " << area_time_us << " us\n";
+    std::cout << "STA (full pipeline):     " << sta_time_us << " us\n";
+    std::cout << "compute_static_power:    " << static_power_time_us << " us\n";
+    std::cout << "evaluate_circuit_soft:   " << soft_eval_time_us << " us\n";
+    std::cout << "compute_switching_power: " << switching_power_time_us << " us\n";
+    std::cout << "compute_internal_power:  " << internal_power_time_us << " us\n";
+
+    double total_time_us = eval_time_us + area_time_us + sta_time_us + static_power_time_us +
+                            soft_eval_time_us + switching_power_time_us + internal_power_time_us;
+    std::cout << "total:                   " << total_time_us << " us\n";
 
     return 0;
 }

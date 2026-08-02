@@ -33,6 +33,7 @@ struct PinTimingArc {
     // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
     std::array<float, MAX_COEFF> propagation_coeffs{};   // fit from collapsed propagation table
     std::array<float, MAX_COEFF> slew_coeffs{};          // fit from collapsed slew table
+    std::array<float, MAX_COEFF> power_coeffs{};          // fit from collapsed slew table
 
     // keep bounds so you can clamp instead of blindly extrapolate
     float min_transition = 0.0f, max_transition = 0.0f;
@@ -162,7 +163,7 @@ struct Gate {
 };
 
 struct Circuit {
-    float f_clk = 1;
+    float f_clk = 1e9;
     float nom_voltage;
     std::vector<Gate> gates;
     std::vector<wire_id> inputs;    // primary input wires, in port-bit order
