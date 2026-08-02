@@ -7,7 +7,7 @@
 // Pin names Yosys typically doesn't mark as inputs in port_directions;
 // fallback used only if a cell has no "port_directions" entry at all.
 static const std::unordered_set<std::string> OUTPUT_PIN_NAMES = {
-    "Y", "X", "Q", "QN", "Z", "CO", "COUT", "SO", "S", "SUM"
+    "Y", "X", "Q", "QN", "Z", "CO", "COUT", "SO", "SUM"
 };
 
 
@@ -222,7 +222,10 @@ inline Circuit parse_netlist(const std::string& netlist_path, const std::string&
 
 
 // Area Eval
-using LibertyLibrary = std::unordered_map<std::string, LibertyCellData>;
+struct LibertyLibrary {
+    std::unordered_map<std::string, LibertyCellData> cells_library;
+    float nom_voltage = 0.0f;
+};
 
 inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     std::ifstream f(liberty_path);
@@ -235,6 +238,13 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     static const std::regex cell_pattern(R"RGX(\bcell\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
     static const std::regex area_pattern(
         R"RGX(\barea\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+    // cell_leakage_power : X; -- scalar leakage attribute, distinct from the
+    // per-state leakage_power() { when: ...; value: ...; } sub-blocks.
+    static const std::regex leakage_power_pattern(
+        R"RGX(\bcell_leakage_power\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+    // library-level scalar, e.g. "nom_voltage : 1.8000000000;"
+    static const std::regex nom_voltage_pattern(
+        R"RGX(\bnom_voltage\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
     // pin ( "name" ) {   or   pin ( name ) {
     static const std::regex pin_pattern(R"RGX(\bpin\s*\(\s*"?([^")]+)"?\s*\)\s*\{)RGX");
     // \b before "capacitance" excludes rise_capacitance/fall_capacitance.
@@ -349,6 +359,15 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
 
     LibertyLibrary cells;
 
+    // Library-level nom_voltage: appears once, before any cell(...) blocks,
+    // so the first match anywhere in the file is the library-level value.
+    {
+        std::smatch nv_match;
+        if (std::regex_search(data, nv_match, nom_voltage_pattern)) {
+            cells.nom_voltage = std::stof(nv_match[1].str());
+        }
+    }
+
     auto cell_begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
     auto cell_end   = std::sregex_iterator();
 
@@ -365,6 +384,11 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
         LibertyCellData entry;
         entry.name = cell_name;
         entry.area = std::stod(area_match[1].str());
+
+        std::smatch leakage_match;
+        if (std::regex_search(cell_block, leakage_match, leakage_power_pattern)) {
+            entry.leakage_power = std::stof(leakage_match[1].str());
+        }
 
         // ---- pass A: collect every timing() sub-block anywhere in the cell,
         // grouped by (related_pin, timing_sense). These live inside the
@@ -462,10 +486,9 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
 
         entry.num_pins = static_cast<int>(pin_index);
 
-        cells[cell_name] = std::move(entry);
+        cells.cells_library[cell_name] = std::move(entry);
     }
 
     return cells;
 }
-
 #endif // IO_UTILS_H

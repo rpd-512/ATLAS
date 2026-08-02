@@ -2,7 +2,7 @@
 #define DEBUG_UTILS_H
 
 inline void print_liberty_library(const LibertyLibrary& liberty) {
-    for (const auto& [name, entry] : liberty) {
+    for (const auto& [name, entry] : liberty.cells_library) {
         std::cout << name << "\n";
 
         std::cout << "  -area: " << entry.area << "\n";
@@ -42,6 +42,7 @@ inline void print_liberty_library(const LibertyLibrary& liberty) {
 
         std::cout << "\n";
     }
+    std::cout << "Liberty Library: " << liberty.nom_voltage << "V\n";
 }
 
 #endif // DEBUG_UTILS_H

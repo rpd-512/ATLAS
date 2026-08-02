@@ -28,11 +28,12 @@ int main(int argc, char** argv) {
     }
 
     // same hardcoded pattern as the Python script's __main__
-    SignalArray input_values = {0, 1, 0, 0, 1, 1, 1, 1};
-
+    SignalArray input_values = {0, 1, 0, 0,
+                                 1, 1, 1, 1,};
     Circuit circuit = parse_netlist(argv[1]);
     LibertyLibrary liberty = parse_liberty(argv[2]);
     attach_liberty_data(circuit, liberty);
+    //print_liberty_library(liberty);
 
     if (input_values.size() != circuit.inputs.size()) {
         std::cerr << "Netlist has " << circuit.inputs.size() << " input bit(s), "
@@ -68,19 +69,24 @@ int main(int argc, char** argv) {
     Clock::time_point t5 = Clock::now();
     double sta_time_us = elapsed_us(t4, t5);
 
-    // --- add more timed steps here the same way ---
+    // --- run power analysis ---
+    Clock::time_point t6 = Clock::now();
+    float static_power = compute_static_power(circuit);
+    Clock::time_point t7 = Clock::now();
+    double power_time_us = elapsed_us(t6, t7);
 
     std::cout << "Output values: " << to_bitstring(result) << "\n";
     std::cout << "total area:       " << total_area << " units\n";
+    std::cout << "static power:     " << static_power << " W\n";
 
     std::cout << "\nPer-gate timing (AT / RT / Slack):\n";
     float worst_arrival = 0.0f;
     std::string critical_gate;
     for (const Gate& g : circuit.gates) {
-        std::cout << "\t" << g.id << " (" << g.data.type << "): "
-                  << "AT=" << g.data.arrival_time
-                  << " RT=" << g.data.required_time
-                  << " slack=" << g.data.slack << "\n";
+        //std::cout << "\t" << g.id << " (" << g.data.type << "): "
+        //          << "AT=" << g.data.arrival_time
+        //          << " RT=" << g.data.required_time
+        //          << " slack=" << g.data.slack << "\n";
 
         if (g.data.arrival_time > worst_arrival) {
             worst_arrival = g.data.arrival_time;
@@ -95,6 +101,7 @@ int main(int argc, char** argv) {
     std::cout << "\tevaluate_circuit: " << eval_time_us << " us\n";
     std::cout << "\tcompute_total_area: " << area_time_us << " us\n";
     std::cout << "\tSTA (run_sta + arrival + required + slack): " << sta_time_us << " us\n";
+    std::cout << "\tcompute_static_power: " << power_time_us << " us\n";
 
     std::cout << "Total time: " << (eval_time_us + area_time_us + sta_time_us) << " us\n";
 

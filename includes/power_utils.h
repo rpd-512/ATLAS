@@ -1,19 +1,17 @@
-#ifndef AREA_UTILS_H
-#define AREA_UTILS_H
+#ifndef POWER_UTILS_H
+#define POWER_UTILS_H
 
-#include "types.h"
-
-inline double compute_total_area(const Circuit& circuit,
+inline double compute_static_power(const Circuit& circuit,
                                   std::vector<std::string>* missing_out = nullptr) {
     double total = 0.0;
     for (const auto& g : circuit.gates) {
-        if (g.data.area < 0.0) {
+        if (g.data.leakage_power < 0.0) {
             if (missing_out) missing_out->push_back(g.id);
             continue;
         }
-        total += g.data.area;
+        total += g.data.leakage_power;
     }
     return total;
 }
 
-#endif // AREA_UTILS_H
+#endif // POWER_UTILS_H

@@ -18,6 +18,8 @@
 
 #include <Eigen/Dense>
 
+#define MAX_COEFF 10
+
 using wire_id = uint32_t;
 using SignalArray = std::vector<bool>;
 
@@ -39,8 +41,9 @@ enum class GateType
     MUX2, NAND2B, NOR2B,
     A21OI, A211O, A22OI, A221O, O21AI, O211A, OAI21,
     A31OI, O31AI,
-    HA, FA, MAJ3,
-    LPFLOW_ISOBUFSRC
+    HA, FA, MAJ3,O21BAI,
+    LPFLOW_ISOBUFSRC,NAND3B, A32OI, MUX2I, OR3B, A221OI, O2BB2AI,
+    A311OI, A21O, A211OI, O22AI, A21BOI,
 };
 
 constexpr int MAX_ARITY = 5; // a221o
@@ -96,6 +99,19 @@ inline const std::unordered_map<GateType, GateInfo>& GateLibrary()
         {GateType::MAJ3, {GateType::MAJ3, "maj3", 3, 1}},
 
         {GateType::LPFLOW_ISOBUFSRC, {GateType::LPFLOW_ISOBUFSRC, "lpflow_isobufsrc", 2, 1}},
+        {GateType::NAND3B, {GateType::NAND3B, "nand3b", 3, 1}},
+        {GateType::O21BAI, {GateType::O21BAI, "o21bai", 3, 1}},
+        {GateType::A32OI,   {GateType::A32OI,   "a32oi",   5, 1}},
+        {GateType::MUX2I,   {GateType::MUX2I,   "mux2i",   3, 1}},
+        {GateType::OR3B,    {GateType::OR3B,    "or3b",    3, 1}},
+        {GateType::A221OI,  {GateType::A221OI,  "a221oi",  5, 1}},
+        {GateType::O2BB2AI, {GateType::O2BB2AI, "o2bb2ai", 4, 1}},
+        {GateType::A311OI,  {GateType::A311OI,  "a311oi",  5, 1}},
+        {GateType::A21O,    {GateType::A21O,    "a21o",    3, 1}},
+        {GateType::A211OI,  {GateType::A211OI,  "a211oi",  4, 1}},
+        {GateType::O22AI,   {GateType::O22AI,   "o22ai",   4, 1}},
+        {GateType::A21BOI,  {GateType::A21BOI,  "a21boi",  3, 1}},
+
     };
     return lib;
 }
@@ -168,6 +184,19 @@ inline std::array<bool, 2> evaluate_gate(GateType type, const std::array<bool, M
         case GateType::MAJ3: return {(a[0] && a[1]) || (a[1] && a[2]) || (a[0] && a[2]), false};
 
         case GateType::LPFLOW_ISOBUFSRC: return {a[0], false};
+        case GateType::NAND3B: return {a[0] || !a[1] || !a[2], false};
+        case GateType::O21BAI: return {(!a[0] && !a[1]) || a[2], false};
+
+        case GateType::A32OI:   return {!((a[0] && a[1] && a[2]) || (a[3] && a[4])), false};
+        case GateType::MUX2I:   return {!(a[2] ? a[1] : a[0]), false};
+        case GateType::OR3B:    return {a[0] || a[1] || !a[2], false};
+        case GateType::A221OI:  return {!((a[0] && a[1]) || (a[2] && a[3]) || a[4]), false};
+        case GateType::O2BB2AI: return {(a[0] || a[1]) && !(a[2] && a[3]), false};
+        case GateType::A311OI:  return {!((a[0] && a[1] && a[2]) || a[3] || a[4]), false};
+        case GateType::A21O:    return {(a[0] && a[1]) || a[2], false};
+        case GateType::A211OI:  return {!((a[0] && a[1]) || a[2] || a[3]), false};
+        case GateType::O22AI:   return {!((a[0] || a[1]) && (a[2] || a[3])), false};
+        case GateType::A21BOI:  return {!((a[0] && a[1]) || !a[2]), false};
 
         default:
             throw std::runtime_error("evaluate_gate: unhandled GateType");
@@ -176,8 +205,8 @@ inline std::array<bool, 2> evaluate_gate(GateType type, const std::array<bool, M
 
 struct PinTimingArc {
     // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
-    std::array<float, 6> propagation_coeffs{};   // fit from collapsed propagation table
-    std::array<float, 6> slew_coeffs{};          // fit from collapsed slew table
+    std::array<float, MAX_COEFF> propagation_coeffs{};   // fit from collapsed propagation table
+    std::array<float, MAX_COEFF> slew_coeffs{};          // fit from collapsed slew table
 
     // keep bounds so you can clamp instead of blindly extrapolate
     float min_transition = 0.0f, max_transition = 0.0f;
@@ -187,6 +216,7 @@ struct PinTimingArc {
 struct LibertyCellData {
     std::string name;
     double area = 0.0;
+    double leakage_power = 0.0;
     std::array<float, MAX_ARITY> input_capacitances{};
 
     // one timing arc (delay + slew surfaces) per input pin
@@ -213,7 +243,10 @@ struct GateData {
         return std::vector<bool>(out.begin(), out.begin() + n);
     }
     float area = -1;              // area in um^2, for area-based fitness
+    float leakage_power = -1;       // leakage power in uW, for power-based fitness
     
+    std::vector<float> toggle_rate;
+
     std::array<float, MAX_ARITY> input_capacitances{};   // fF, per input pin
     std::array<float, MAX_ARITY> input_transition{};   // fF, per input pin
 
@@ -234,6 +267,8 @@ struct Gate {
 };
 
 struct Circuit {
+    float f_clk = 1;
+    float nom_voltage;
     std::vector<Gate> gates;
     std::vector<wire_id> inputs;    // primary input wires, in port-bit order
     std::vector<wire_id> outputs;   // primary output wires, in port-bit order
@@ -246,7 +281,7 @@ struct Circuit {
 // index_1: input transition breakpoints (rows of table)
 // index_2: output load breakpoints (columns of table)
 // table:   table[i][j] corresponds to (index_1[i], index_2[j])
-inline std::array<float, 6> fit_nldm_coeffs(
+inline std::array<float, MAX_COEFF> fit_nldm_coeffs(
     const std::vector<float>& index_1,
     const std::vector<float>& index_2,
     const std::vector<std::vector<float>>& table)
@@ -289,13 +324,13 @@ inline std::array<float, 6> fit_nldm_coeffs(
 
     Eigen::VectorXf solved = A.colPivHouseholderQr().solve(z);
 
-    std::array<float, 6> coeffs{};
+    std::array<float, MAX_COEFF> coeffs{};
     for (int k = 0; k < 6; ++k) coeffs[k] = solved(k);
     return coeffs;
 }
 
 
-inline float eval_nldm(const std::array<float, 6>& c, float x, float y,
+inline float eval_nldm(const std::array<float, MAX_COEFF>& c, float x, float y,
                         float x_min, float x_max, float y_min, float y_max)
 {
     x = std::clamp(x, x_min, x_max);

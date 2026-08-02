@@ -4,6 +4,34 @@
 #include "io_utils.h"
 #include "area_utils.h"
 #include "sta_utils.h"
+#include "power_utils.h"
+
+
+// Populates GateData::area on every gate in circuit by looking up
+// gate.data.name (the raw, unstripped cell type) in the liberty library.
+// Gates with no matching liberty entry are left at their default (-1.0);
+// warn_missing controls whether that's reported to stderr.
+inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
+                                 bool warn_missing = true) {
+    circuit.nom_voltage = liberty.nom_voltage;   // global, from the liberty header
+
+    for (Gate& g : circuit.gates) {
+        auto it = liberty.cells_library.find(g.data.name);
+        if (it != liberty.cells_library.end()) {
+            const LibertyCellData& entry = it->second;
+            g.data.area = static_cast<float>(entry.area);
+            g.data.leakage_power = entry.leakage_power;
+            g.data.liberty = &entry;
+
+            size_t n = std::min(entry.input_capacitances.size(), g.data.input_capacitances.size());
+            std::copy_n(entry.input_capacitances.begin(), n, g.data.input_capacitances.begin());
+        } else if (warn_missing) {
+            std::cerr << "attach_liberty_data: no liberty entry for cell type '"
+                       << g.data.name << "' (gate '" << g.id << "')\n";
+        }
+    }
+}
+
 
 inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& input_values) {
     if (input_values.size() != circuit.inputs.size()) {
