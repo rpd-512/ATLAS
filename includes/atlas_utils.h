@@ -5,12 +5,9 @@
 #include "area_utils.h"
 #include "sta_utils.h"
 #include "power_utils.h"
+#include "eval_utils.h"
+#include "soft_eval_utils.h"
 
-
-// Populates GateData::area on every gate in circuit by looking up
-// gate.data.name (the raw, unstripped cell type) in the liberty library.
-// Gates with no matching liberty entry are left at their default (-1.0);
-// warn_missing controls whether that's reported to stderr.
 inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
                                  bool warn_missing = true) {
     circuit.nom_voltage = liberty.nom_voltage;   // global, from the liberty header
@@ -25,84 +22,31 @@ inline void attach_liberty_data(Circuit& circuit, const LibertyLibrary& liberty,
 
             size_t n = std::min(entry.input_capacitances.size(), g.data.input_capacitances.size());
             std::copy_n(entry.input_capacitances.begin(), n, g.data.input_capacitances.begin());
+
+            // Compile each output pin's boolean function string once here,
+            // rather than per-eval. compile_boolean_expr (eval_utils.h)
+            // resolves variables by name at eval time against a
+            // std::unordered_map<std::string, bool>, which GateData::evaluate
+            // builds from entry.pin_index + the positional input vector.
+            //
+            // compile_soft_expr (soft_eval_utils.h) compiles the same
+            // function string into the continuous/relaxed (product t-norm)
+            // evaluator used by GateData::evaluate_soft. Both are compiled
+            // from the same source string, in the same order, so
+            // compiled_fns and compiled_soft_fns stay index-aligned with
+            // entry.output_names.
+            g.data.compiled_fns.clear();
+            g.data.compiled_fns.reserve(entry.function_strings.size());
+            g.data.compiled_soft_fns.clear();
+            g.data.compiled_soft_fns.reserve(entry.function_strings.size());
+            for (const std::string& fn_str : entry.function_strings) {
+                g.data.compiled_fns.push_back(compile_boolean_expr(fn_str));
+                g.data.compiled_soft_fns.push_back(compile_soft_expr(fn_str));
+            }
         } else if (warn_missing) {
             std::cerr << "attach_liberty_data: no liberty entry for cell type '"
                        << g.data.name << "' (gate '" << g.id << "')\n";
         }
     }
 }
-
-
-inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& input_values) {
-    if (input_values.size() != circuit.inputs.size()) {
-        throw std::runtime_error("evaluate_circuit: input_values size (" + std::to_string(input_values.size()) +
-                                  ") does not match circuit.inputs size (" + std::to_string(circuit.inputs.size()) + ")");
-    }
-
-    std::unordered_map<wire_id, bool> input_map;
-    input_map.reserve(circuit.inputs.size());
-    for (size_t i = 0; i < circuit.inputs.size(); ++i) {
-        input_map[circuit.inputs[i]] = input_values[i];
-    }
-
-    // wire -> (gate index, output pin index within that gate)
-    std::unordered_map<wire_id, std::pair<size_t, size_t>> driver_of;
-    for (size_t g = 0; g < circuit.gates.size(); ++g) {
-        const auto& outs = circuit.gates[g].outputs;
-        for (size_t p = 0; p < outs.size(); ++p) {
-            driver_of[outs[p]] = {g, p};
-        }
-    }
-
-    std::vector<bool> node_done(circuit.gates.size(), false);
-    std::vector<char> node_visiting(circuit.gates.size(), false);   // combinational-loop guard
-    std::vector<std::vector<bool>> node_result(circuit.gates.size());
-
-    std::function<bool(wire_id)> value_of = [&](wire_id w) -> bool {
-        if (w == WIRE_CONST_0) return false;
-        if (w == WIRE_CONST_1) return true;
-
-        auto in_it = input_map.find(w);
-        if (in_it != input_map.end()) return in_it->second;
-
-        auto drv_it = driver_of.find(w);
-        if (drv_it == driver_of.end()) {
-            throw std::runtime_error("evaluate_circuit: wire " + std::to_string(w) +
-                                      " is neither a primary input nor any gate's output");
-        }
-
-        size_t gidx = drv_it->second.first;
-        size_t pidx = drv_it->second.second;
-
-        if (!node_done[gidx]) {
-            if (node_visiting[gidx]) {
-                throw std::runtime_error("evaluate_circuit: combinational loop through gate '" +
-                                          circuit.gates[gidx].id + "'");
-            }
-            node_visiting[gidx] = true;
-
-            const Gate& g = circuit.gates[gidx];
-            std::vector<bool> args;
-            args.reserve(g.inputs.size());
-            for (wire_id in_w : g.inputs) {
-                args.push_back(value_of(in_w));
-            }
-            node_result[gidx] = g.data.evaluate(args);
-
-            node_visiting[gidx] = false;
-            node_done[gidx] = true;
-        }
-
-        return node_result[gidx].at(pidx);
-    };
-
-    SignalArray result;
-    result.reserve(circuit.outputs.size());
-    for (wire_id w : circuit.outputs) {
-        result.push_back(value_of(w));
-    }
-    return result;
-}
-
-
 #endif // ATLAS_UTILS_H

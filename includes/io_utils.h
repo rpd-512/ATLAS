@@ -206,9 +206,8 @@ inline Circuit parse_netlist(const std::string& netlist_path, const std::string&
         g.id = rc.id;
         g.data.name = rc.raw_type;
         g.data.type = strip_drive_strength(strip_library_prefix(rc.raw_type));
-        g.data.gate_type = gate_type_from_string(g.data.type);   // <-- only new line
-
         g.outputs.reserve(rc.out_nets.size());
+        
         for (raw_bit_t b : rc.out_nets) g.outputs.push_back(r(b));
 
         g.inputs.reserve(rc.in_nets.size());
@@ -250,6 +249,10 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     // \b before "capacitance" excludes rise_capacitance/fall_capacitance.
     static const std::regex capacitance_pattern(
         R"RGX(\bcapacitance\s*:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;)RGX");
+    // function : "..."; -- Liberty's per-output boolean function, e.g.
+    // pin(Y) { function : "(A&!B&!C)|(!A&B&!C)"; ... }
+    static const std::regex function_pattern(
+        R"RGX(\bfunction\s*:\s*"([^"]*)"\s*;)RGX");
     static const std::regex index1_pattern(R"RGX(index_1\s*\(\s*"([^"]*)"\s*\))RGX");
     static const std::regex index2_pattern(R"RGX(index_2\s*\(\s*"([^"]*)"\s*\))RGX");
     static const std::regex num_pattern(R"RGX([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)RGX");
@@ -425,9 +428,10 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
             pin_timing[related_pin][timing_sense] = std::move(arc);
         }
 
-        // ---- pass B: walk each pin(...) sub-block in file order to assign
-        // dense pin indices (same order as before), then pull that pin's
-        // timing data out of pin_timing by name. ----
+        // ---- pass B: walk each pin(...) sub-block in file order. Input
+        // pins (have `capacitance`) get a dense pin_index and their timing
+        // arc pulled from pin_timing; output pins (have `function` instead)
+        // get their boolean function captured, in file order. ----
         auto pin_begin = std::sregex_iterator(cell_block.begin(), cell_block.end(), pin_pattern);
         auto pin_end   = std::sregex_iterator();
 
@@ -439,13 +443,20 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
             std::string pin_block = extract_block(cell_block, pin_start);
 
             // capacitance: only meaningful on input pins; output pins don't
-            // carry one, so a missing match here just skips without
-            // consuming a pin_index slot.
+            // carry one, so a missing match here means it's (probably) an
+            // output pin instead -- check for `function` there and skip
+            // without consuming a pin_index slot either way.
             std::smatch cap_match;
             if (!std::regex_search(pin_block, cap_match, capacitance_pattern)) {
+                std::smatch fn_match;
+                if (std::regex_search(pin_block, fn_match, function_pattern)) {
+                    entry.output_names.push_back(pin_name);
+                    entry.function_strings.push_back(fn_match[1].str());
+                }
                 continue;
             }
             entry.input_capacitances[pin_index] = std::stof(cap_match[1].str());
+            entry.pin_index[pin_name] = static_cast<int>(pin_index);
 
             PinTimingArc& arc = entry.pin_arcs[pin_index];
 
@@ -491,4 +502,5 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
 
     return cells;
 }
+
 #endif // IO_UTILS_H
