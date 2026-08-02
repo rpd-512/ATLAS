@@ -7,31 +7,45 @@
 #include "includes/atlas_utils.h"
 #include "includes/debug_utils.h"
 
-using Clock = std::chrono::steady_clock;
+// LOD8 - 8-bit leading-one detector.
+// row.inputs[i]  : input bit i, right = 0, left = 7
+// row.expected_outputs[i] : bit i of the 3-bit index (0 = LSB), i in [0,2]
+// Scan direction is right -> left; output = index of the first 1 found,
+// i.e. the position of the lowest set input bit.
+// ASSUMPTION: input 00000000 -> expected output 000 (see note above).
+TruthTable make_lod8_truth_table() {
+    TruthTable table;
+    table.rows.reserve(256);
 
-double elapsed_us(Clock::time_point start, Clock::time_point end) {
-    return std::chrono::duration<double, std::micro>(end - start).count();
-}
+    for (unsigned v = 0; v < 256; ++v) {
+        TruthTableRow row;
 
-std::string to_bitstring(const SignalArray& signals) {
-    std::string out;
-    out.reserve(signals.size());
-    for (bool b : signals) out += (b ? '1' : '0');
-    return out;
-}
+        // inputs[i] corresponds to bit i
+        row.inputs.resize(8);
+        for (int i = 0; i < 8; ++i) {
+            row.inputs[i] = (v >> i) & 1u;
+        }
 
-std::string to_soft_string(const SoftSignalArray& signals) {
-    std::string out = "[";
-    for (size_t i = 0; i < signals.size(); ++i) {
-        if (i) out += ", ";
-        out += std::to_string(signals[i]);
+        // Find the leading 1 (highest set bit)
+        unsigned idx = 0;
+
+        for (int i = 7; i >= 0; --i) {
+            if ((v >> i) & 1u) {
+                idx = static_cast<unsigned>(i);
+                break;
+            }
+        }
+
+        // Encode index as 3-bit binary
+        row.expected_outputs.resize(3);
+        for (int i = 0; i < 3; ++i) {
+            row.expected_outputs[i] = (idx >> i) & 1u;
+        }
+
+        table.rows.push_back(std::move(row));
     }
-    out += "]";
-    return out;
-}
 
-void print_section(const std::string& title) {
-    std::cout << "\n=== " << title << " ===\n";
+    return table;
 }
 
 int main(int argc, char** argv) {
@@ -120,6 +134,14 @@ int main(int argc, char** argv) {
         }
     }
 
+    TruthTable lod8_table = make_lod8_truth_table();
+    Clock::time_point tt0 = Clock::now();
+    size_t total_mismatches = check_truth_table_exhaustive(circuit, lod8_table);
+    Clock::time_point tt1 = Clock::now();
+    double lod8_time_us = elapsed_us(tt0, tt1);
+    //print_truth_table(lod8_table, 8, 3);
+
+
     print_section("Functional evaluation");
     std::cout << "input values:  " << to_bitstring(input_values) << "\n";
     std::cout << "output values: " << to_bitstring(result) << "\n";
@@ -127,6 +149,12 @@ int main(int argc, char** argv) {
     print_section("Soft evaluation (product t-norm)");
     std::cout << "soft input values:  " << to_soft_string(soft_input_values) << "\n";
     std::cout << "soft output values: " << to_soft_string(soft_result) << "\n";
+
+    print_section("Evaluating Circuit Against Truth Table");
+    std::cout << "rows checked:     " << lod8_table.rows.size() << "\n";
+    std::cout << "total mismatches: " << total_mismatches
+            << " (output bits summed across all rows)\n";
+
 
     print_section("Area");
     std::cout << "total area: " << total_area << " units\n";
@@ -158,10 +186,11 @@ int main(int argc, char** argv) {
     std::cout << "evaluate_circuit_soft:   " << soft_eval_time_us << " us\n";
     std::cout << "compute_switching_power: " << switching_power_time_us << " us\n";
     std::cout << "compute_internal_power:  " << internal_power_time_us << " us\n";
+    std::cout << "check_truth_table:       " << lod8_time_us << " us\n";
 
     double total_time_us = eval_time_us + area_time_us + sta_time_us + static_power_time_us +
                             soft_eval_time_us + switching_power_time_us + internal_power_time_us;
-    std::cout << "total:                   " << total_time_us << " us\n";
+    std::cout << "total:                   " << total_time_us + lod8_time_us << " us\n";
 
     return 0;
 }

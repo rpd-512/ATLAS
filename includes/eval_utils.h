@@ -206,4 +206,59 @@ inline SignalArray evaluate_circuit(const Circuit& circuit, const SignalArray& i
     return result;
 }
 
+// ---------------------------------------------------------------------
+// Truth-table checking
+// ---------------------------------------------------------------------
+
+// One row of a truth table: an input assignment together with the output
+// that assignment is expected to produce.
+struct TruthTableRow {
+    SignalArray inputs;
+    SignalArray expected_outputs;
+};
+
+// A truth table is just an ordered list of rows. It doesn't have to cover
+// every 2^n input combination -- it's whatever rows you populate -- but
+// for a true exhaustive check you'd give it one row per input combination.
+struct TruthTable {
+    std::vector<TruthTableRow> rows;
+};
+
+// Finds the row in `table` whose inputs match `input`, then compares
+// `actual_output` (e.g. whatever evaluate_circuit produced for that input)
+// against that row's expected_outputs, bit by bit.
+// Returns the number of output bits that differ; 0 means an exact match.
+inline size_t check_against_truth_table(const TruthTable& table,
+                                         const SignalArray& input,
+                                         const SignalArray& actual_output) {
+    for (const auto& row : table.rows) {
+        if (row.inputs == input) {
+            if (actual_output.size() != row.expected_outputs.size()) {
+                throw std::runtime_error(
+                    "check_against_truth_table: actual_output size (" + std::to_string(actual_output.size()) +
+                    ") does not match expected_outputs size (" + std::to_string(row.expected_outputs.size()) + ")");
+            }
+            size_t mismatches = 0;
+            for (size_t i = 0; i < actual_output.size(); ++i) {
+                if (actual_output[i] != row.expected_outputs[i]) ++mismatches;
+            }
+            return mismatches;
+        }
+    }
+    throw std::runtime_error("check_against_truth_table: no row in the truth table matches the given input");
+}
+
+// Exhaustively walks every row of `table`, evaluates `circuit` on that
+// row's input, and checks the result against the row's expected output.
+// Returns the total number of output bits that differed, summed across
+// every row -- 0 means the circuit matches the truth table exactly.
+inline size_t check_truth_table_exhaustive(const Circuit& circuit, const TruthTable& table) {
+    size_t total_mismatches = 0;
+    for (const auto& row : table.rows) {
+        SignalArray actual_output = evaluate_circuit(circuit, row.inputs);
+        total_mismatches += check_against_truth_table(table, row.inputs, actual_output);
+    }
+    return total_mismatches;
+}
+
 #endif // EVAL_UTILS_H

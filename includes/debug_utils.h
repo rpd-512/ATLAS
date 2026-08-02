@@ -115,4 +115,55 @@ inline void debug_print_gate_power(const Circuit& circuit) {
     std::cout << "----------------------------------\n\n";
 }
 
+using Clock = std::chrono::steady_clock;
+
+double elapsed_us(Clock::time_point start, Clock::time_point end) {
+    return std::chrono::duration<double, std::micro>(end - start).count();
+}
+
+std::string to_bitstring(const SignalArray& signals) {
+    std::string out;
+    out.reserve(signals.size());
+    for (bool b : signals) out += (b ? '1' : '0');
+    return out;
+}
+
+std::string to_soft_string(const SoftSignalArray& signals) {
+    std::string out = "[";
+    for (size_t i = 0; i < signals.size(); ++i) {
+        if (i) out += ", ";
+        out += std::to_string(signals[i]);
+    }
+    out += "]";
+    return out;
+}
+
+void print_section(const std::string& title) {
+    std::cout << "\n=== " << title << " ===\n";
+}
+
+// Prints the full 256-row LOD8 truth table in normal left-to-right reading
+// order (bit7 ... bit0), i.e. the same display convention main() uses for
+// input_values/result -- NOT the internal right=0 storage order the rows
+// are built in.
+// Truth table printer.
+void print_truth_table(const TruthTable& table, int n, int out_w) {
+    print_section("Truth table");
+    std::cout << "   val | input (bit" << n - 1 << "..bit0) | output (bit" << out_w - 1 << "..bit0)\n";
+    std::cout << std::string(20 + n + out_w, '-') << "\n";
+
+    for (size_t v = 0; v < table.rows.size(); ++v) {
+        const TruthTableRow& row = table.rows[v];
+
+        SignalArray in_display = row.inputs;
+        std::reverse(in_display.begin(), in_display.end());
+
+        SignalArray out_display = row.expected_outputs;
+        std::reverse(out_display.begin(), out_display.end());
+
+        std::cout << std::setw(6) << v << " | "
+                  << std::setw(n) << std::left << to_bitstring(in_display) << std::right << " | "
+                  << to_bitstring(out_display) << "\n";
+    }
+}
 #endif // DEBUG_UTILS_H
