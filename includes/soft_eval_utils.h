@@ -7,6 +7,7 @@
 #include <memory>
 #include <stdexcept>
 #include <cctype>
+#include "types.h"
 
 // AST node base for the probabilistic/continuous relaxation of boolean
 // logic (product t-norm): AND = A*B, OR = A+B-A*B, NOT = 1-A. Values are
@@ -134,8 +135,6 @@ compile_soft_expr(const std::string& expr) {
         return ast->eval(vars);
     };
 }
-
-using SoftSignalArray = std::vector<float>;
 
 // Static-probability switching-activity estimator: for a signal with
 // probability p of being 1 (as produced by the product t-norm relaxation),

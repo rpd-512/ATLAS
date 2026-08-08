@@ -253,20 +253,6 @@ inline SignalArray evaluate_compiled(const CompiledCircuit& cc, const SignalArra
 // Truth-table checking
 // ---------------------------------------------------------------------
 
-// One row of a truth table: an input assignment together with the output
-// that assignment is expected to produce.
-struct TruthTableRow {
-    SignalArray inputs;
-    SignalArray expected_outputs;
-};
-
-// A truth table is just an ordered list of rows. It doesn't have to cover
-// every 2^n input combination -- it's whatever rows you populate -- but
-// for a true exhaustive check you'd give it one row per input combination.
-struct TruthTable {
-    std::vector<TruthTableRow> rows;
-};
-
 // Finds the row in `table` whose inputs match `input`, then compares
 // `actual_output` (e.g. whatever evaluate_circuit produced for that input)
 // against that row's expected_outputs, bit by bit.

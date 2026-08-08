@@ -23,11 +23,26 @@
 
 using wire_id = uint32_t;
 using SignalArray = std::vector<bool>;
+using SoftSignalArray = std::vector<float>;
 
 constexpr wire_id WIRE_CONST_0 = std::numeric_limits<wire_id>::max() - 1;
 constexpr wire_id WIRE_CONST_1 = std::numeric_limits<wire_id>::max();
 
 constexpr int MAX_ARITY = 5; // a221o
+
+// One row of a truth table: an input assignment together with the output
+// that assignment is expected to produce.
+struct TruthTableRow {
+    SignalArray inputs;
+    SignalArray expected_outputs;
+};
+
+// A truth table is just an ordered list of rows. It doesn't have to cover
+// every 2^n input combination -- it's whatever rows you populate -- but
+// for a true exhaustive check you'd give it one row per input combination.
+struct TruthTable {
+    std::vector<TruthTableRow> rows;
+};
 
 struct PinTimingArc {
     // fitted quadratic surface: delay(x,y) = c0 + c1*x + c2*y + c3*x*y + c4*x^2 + c5*y^2
