@@ -197,11 +197,20 @@ ATLAS additionally uses:
 
 * [nlohmann/json](https://github.com/nlohmann/json) — JSON parsing and netlist processing
 * [Eigen3](https://eigen.tuxfamily.org/) — fitting delay/slew surfaces from Liberty NLDM tables using least-squares
+* [indicators](https://github.com/p-ranav/indicators) — terminal progress bars and CLI progress reporting
 
 On Ubuntu, the required development packages can be installed with:
 
 ```bash
 sudo apt install nlohmann-json3-dev libeigen3-dev
+```
+
+To install `indicators` system-wide:
+
+```bash
+git clone https://github.com/p-ranav/indicators.git
+cd indicators
+sudo cp -r include/indicators /usr/local/include/
 ```
 
 ## Building

@@ -3,6 +3,10 @@
 #define IO_UTILS_H
 
 #include "types.h"
+#include <indicators/block_progress_bar.hpp>
+#include <indicators/cursor_control.hpp>
+
+using namespace indicators;
 
 // Pin names Yosys typically doesn't mark as inputs in port_directions;
 // fallback used only if a cell has no "port_directions" entry at all.
@@ -381,9 +385,32 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
     auto cell_begin = std::sregex_iterator(data.begin(), data.end(), cell_pattern);
     auto cell_end   = std::sregex_iterator();
 
+    const size_t total_cells =
+    static_cast<size_t>(std::distance(cell_begin, cell_end));
+    size_t processed_cells = 0;
+    BlockProgressBar bar{
+        option::BarWidth{40},
+        option::ForegroundColor{Color::white},
+        option::PrefixText{"Working "},
+        option::ShowElapsedTime{true},
+        option::Start{"|"},
+        option::End{"|"},
+        option::ShowRemainingTime{true},
+        option::FontStyles{
+            std::vector<FontStyle>{FontStyle::bold}},
+        option::MaxProgress{100}
+    };
+
+    std::cout << "Parsing Liberty file: " << liberty_path << " (" << total_cells << " cells)" << std::endl;
+
     for (auto it = cell_begin; it != cell_end; ++it) {
         const std::smatch& match = *it;
         std::string cell_name = match[1].str();
+        ++processed_cells;
+
+        bar.set_progress(
+            static_cast<int>((processed_cells * 100) / total_cells)
+        );
 
         size_t cell_start = static_cast<size_t>(match.position(0) + match.length(0));
         std::string cell_block = extract_block(data, cell_start);
@@ -561,6 +588,9 @@ inline LibertyLibrary parse_liberty(const std::string& liberty_path) {
 
         cells.cells_library[cell_name] = std::move(entry);
     }
+    show_console_cursor(true);
+    std::cout << "\033[0m" << std::flush; //undo bold
+    std::cout << "\nParsed " << processed_cells << " cells from Liberty file." << std::endl;
 
     return cells;
 }
